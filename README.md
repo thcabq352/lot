@@ -2,7 +2,7 @@
 
 Agent-first film tools. **Stdio first, GUI last.**
 
-- CLI: `lot status --json` · `lot writer` · `lot breakdown` · `lot dailies` · `lot stems`
+- CLI: `lot status --json` · `lot writer` · `lot breakdown` · `lot stills` · `lot board` · `lot dailies` · `lot stems`
 - MCP: `lot mcp`
 - Doctor: `lot doctor --json`
 - HTTP twin (later): `lot serve`

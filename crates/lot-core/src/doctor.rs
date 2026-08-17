@@ -13,6 +13,7 @@ pub struct Doctor {
     pub local_configured: bool,
     pub vo_tts: bool,
     pub soundtrack_cmd: bool,
+    pub stills_comfy_workflow: bool,
     pub renderer: &'static str,
 }
 
@@ -40,6 +41,10 @@ impl Doctor {
             soundtrack_cmd: std::env::var("LOT_SOUNDTRACK_CMD")
                 .ok()
                 .map(|s| !s.trim().is_empty())
+                .unwrap_or(false),
+            stills_comfy_workflow: std::env::var("LOT_COMFY_WORKFLOW")
+                .ok()
+                .map(|p| std::path::Path::new(p.trim()).is_file())
                 .unwrap_or(false),
             renderer: if comfy { "comfy" } else { "unavailable" },
         }

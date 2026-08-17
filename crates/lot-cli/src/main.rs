@@ -1,9 +1,9 @@
 use clap::{Parser, Subcommand};
 use lot_core::{
-    breakdown_parse, breakdown_summary, create_show, dailies_circle, dailies_export,
+    board_export, breakdown_parse, breakdown_summary, create_show, dailies_circle, dailies_export,
     dailies_ingest, draft_screenplay, lock_writer, open_show, picture_lock, replace_cast_json,
-    revise_screenplay, set_brief, set_style, slate_set, stems_soundtrack, stems_vo, unlock_writer,
-    upsert_cast, wall_add, Doctor, Status,
+    revise_screenplay, set_brief, set_style, slate_set, stems_soundtrack, stems_vo,
+    stills_generate, unlock_writer, upsert_cast, wall_add, Doctor, Status,
 };
 use std::path::{Path, PathBuf};
 use std::process::ExitCode;
@@ -55,6 +55,16 @@ enum Cmd {
     Picture {
         #[command(subcommand)]
         cmd: PictureCmd,
+    },
+    /// Stills: Grok Imagine or local Comfy. --backend required. No silent swap.
+    Stills {
+        #[command(subcommand)]
+        cmd: StillsCmd,
+    },
+    /// Board: export stills + slate prompts (one tool toward Slate).
+    Board {
+        #[command(subcommand)]
+        cmd: BoardCmd,
     },
     /// Slate: continuity-locked prompts on shots.
     Slate {
@@ -160,6 +170,25 @@ enum PictureCmd {
         #[arg(long)]
         shot: String,
     },
+}
+
+#[derive(Subcommand)]
+enum StillsCmd {
+    /// Generate one still. Backend is grok or comfy — never swapped.
+    Generate {
+        #[arg(long)]
+        shot: String,
+        #[arg(long)]
+        backend: String,
+        #[arg(long)]
+        prompt: Option<String>,
+    },
+}
+
+#[derive(Subcommand)]
+enum BoardCmd {
+    /// Write board/board.json + board.md from shots / stills / prompts.
+    Export,
 }
 
 #[derive(Subcommand)]
@@ -287,6 +316,55 @@ fn main() -> ExitCode {
                         &show,
                         serde_json::json!({ "wall": show.wall }),
                         &format!("wall beat added ({})", dir.display()),
+                    ),
+                    Err(e) => fail(cli.json, &e.to_string()),
+                },
+            }
+        }
+        Cmd::Stills { cmd } => {
+            if let Some(code) = apply_show(cli.show.as_deref(), cli.json) {
+                return code;
+            }
+            match cmd {
+                StillsCmd::Generate {
+                    shot,
+                    backend,
+                    prompt,
+                } => match stills_generate(&shot, &backend, prompt.as_deref()) {
+                    Ok((dir, show)) => ok_writer(
+                        cli.json,
+                        &dir,
+                        &show,
+                        serde_json::json!({
+                            "stills_backend": show.stills_backend,
+                            "shots": show.shots.iter().map(|s| {
+                                serde_json::json!({
+                                    "num": s.num,
+                                    "name": s.name,
+                                    "prompt": s.prompt,
+                                    "still": s.still_path,
+                                    "backend": s.still_backend,
+                                })
+                            }).collect::<Vec<_>>()
+                        }),
+                        "still generated",
+                    ),
+                    Err(e) => fail(cli.json, &e.to_string()),
+                },
+            }
+        }
+        Cmd::Board { cmd } => {
+            if let Some(code) = apply_show(cli.show.as_deref(), cli.json) {
+                return code;
+            }
+            match cmd {
+                BoardCmd::Export => match board_export() {
+                    Ok((dir, show, file)) => ok_writer(
+                        cli.json,
+                        &dir,
+                        &show,
+                        serde_json::json!({ "export": file.display().to_string() }),
+                        &format!("board export {}", file.display()),
                     ),
                     Err(e) => fail(cli.json, &e.to_string()),
                 },

@@ -23,7 +23,7 @@ Optional `--show <path>` (CLI global) or MCP `path` opens that show, then runs. 
 - `lot_status`, `lot_create`, `lot_open`, `lot_doctor`
 - `lot_writer_brief`, `lot_writer_style`, `lot_writer_cast`, `lot_writer_draft`, `lot_writer_revise`, `lot_writer_lock`, `lot_writer_unlock`
 - `lot_breakdown_import`, `lot_breakdown_parse`
-- `lot_wall_add`, `lot_picture_lock`, `lot_slate_set`
+- `lot_wall_add`, `lot_picture_lock`, `lot_stills_generate`, `lot_board_export`, `lot_slate_set`
 - `lot_dailies_ingest`, `lot_dailies_circle`, `lot_dailies_export`, `lot_cut_export`
 - `lot_stems_soundtrack`, `lot_stems_vo`
 
@@ -61,6 +61,16 @@ lot breakdown status --json
 
 Parser is ScriptBreak-equivalent (sluglines, `NAME (quietly)` → character ADA). Import does not delete the source `.txt` / `.scriptbreak`.
 
+## Stills + Board
+
+```
+lot stills generate --shot 01 --backend grok --json
+lot stills generate --shot 01 --backend comfy --json   # needs LOT_COMFY_WORKFLOW with {{prompt}}
+lot board export --json
+```
+
+`--backend` is required: `grok` or `comfy`. No silent swap. No fake PNG. Prompt from slate or `--prompt`.
+
 ## Dailies (Circle Take)
 
 ```
@@ -85,7 +95,7 @@ No soundtrack engine → `no soundtrack engine —` and **no** silent stub. No T
 
 ## Stack
 
-- `crates/lot-core` — schema, Writer, Breakdown, Dailies, Stems, doctor
+- `crates/lot-core` — schema, Writer, Breakdown, Dailies, Stems, Stills, doctor
 - `crates/lot-cli` — binary `lot`
 - `crates/lot-mcp` — stdio MCP (`lot mcp`)
 

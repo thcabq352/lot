@@ -74,6 +74,9 @@ pub struct Show {
     pub writer: Writer,
     #[serde(default)]
     pub stems: crate::stems::Stems,
+    /// Last explicit stills backend (`grok` | `comfy`). Not a fallback.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub stills_backend: Option<String>,
 }
 
 #[derive(Debug, Clone, Default, Serialize, Deserialize)]
@@ -129,6 +132,7 @@ impl Show {
             wall: Vec::new(),
             writer: Writer::default(),
             stems: crate::stems::Stems::default(),
+            stills_backend: None,
         }
     }
 }
@@ -754,6 +758,62 @@ mod tests {
         std::env::remove_var("LOT_HERMES_HOME");
         std::env::remove_var("LOT_LOCAL_BASE_URL");
         std::env::remove_var("LOT_LOCAL_MODEL");
+    }
+
+    #[test]
+    fn stills_backend_required_no_swap() {
+        let _g = ENV.lock().unwrap_or_else(|e| e.into_inner());
+        let (dir, mut show) = setup_show("Stills");
+        isolate_brain();
+        std::env::remove_var("LOT_COMFY_WORKFLOW");
+        show.shots.push(crate::model::Shot {
+            id: "sh-1".into(),
+            num: "01".into(),
+            name: "tent".into(),
+            prompt: "a clown loses the mask, wide".into(),
+            ..crate::model::Shot::default()
+        });
+        write_show(&dir, &show).unwrap();
+        let err = crate::stills_generate("01", "", None)
+            .unwrap_err()
+            .to_string();
+        assert!(err.contains("grok or comfy"), "{err}");
+        let err = crate::stills_generate("01", "grok", None)
+            .unwrap_err()
+            .to_string();
+        assert!(err.contains("no grok stills"), "{err}");
+        assert!(err.contains("Did not call Comfy"), "{err}");
+        assert!(!dir.join("stills").join("01.png").exists());
+        let err = crate::stills_generate("01", "comfy", None)
+            .unwrap_err()
+            .to_string();
+        assert!(err.contains("no comfy stills"), "{err}");
+        assert!(err.contains("Did not call Grok"), "{err}");
+        assert!(!dir.join("stills").join("01.png").exists());
+        std::env::remove_var("HERMES_HOME");
+        std::env::remove_var("LOT_HERMES_HOME");
+        std::env::remove_var("LOT_LOCAL_BASE_URL");
+        std::env::remove_var("LOT_LOCAL_MODEL");
+    }
+
+    #[test]
+    fn board_export_lists_shots() {
+        let _g = ENV.lock().unwrap_or_else(|e| e.into_inner());
+        let (dir, mut show) = setup_show("Board");
+        show.shots.push(crate::model::Shot {
+            id: "sh-1".into(),
+            num: "01".into(),
+            name: "tent".into(),
+            prompt: "wide tent".into(),
+            ..crate::model::Shot::default()
+        });
+        write_show(&dir, &show).unwrap();
+        let (_, _, file) = crate::board_export().unwrap();
+        assert!(file.is_file());
+        let body = fs::read_to_string(&file).unwrap();
+        assert!(body.contains("\"01\""), "{body}");
+        assert!(body.contains("wide tent"), "{body}");
+        assert!(dir.join("board").join("board.md").is_file());
     }
 
     #[test]

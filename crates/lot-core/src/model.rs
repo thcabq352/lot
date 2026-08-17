@@ -58,6 +58,13 @@ pub struct Shot {
     pub prompt: String,
     #[serde(default)]
     pub locked: bool,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub still_path: Option<String>,
+    /// `grok` or `comfy`. Never inferred from the other engine.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub still_backend: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub still_provenance: Option<crate::Provenance>,
 }
 
 #[derive(Debug, Clone, Default, Serialize, Deserialize, PartialEq)]

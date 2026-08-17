@@ -212,6 +212,28 @@ fn tools() -> Value {
             }
         },
         {
+            "name": "lot_stills_generate",
+            "description": "Generate a still for a shot. backend must be grok or comfy. No silent swap. Never a fake PNG.",
+            "inputSchema": {
+                "type": "object",
+                "properties": {
+                    "shot": { "type": "string" },
+                    "backend": { "type": "string", "description": "grok | comfy" },
+                    "prompt": { "type": "string" },
+                    "path": path_prop()
+                },
+                "required": ["shot", "backend"]
+            }
+        },
+        {
+            "name": "lot_board_export",
+            "description": "Export board/board.json from shots, stills, and slate prompts. One tool toward Slate.",
+            "inputSchema": {
+                "type": "object",
+                "properties": { "path": path_prop() }
+            }
+        },
+        {
             "name": "lot_slate_set",
             "description": "Set a continuity-locked prompt on a shot.",
             "inputSchema": {
@@ -530,6 +552,30 @@ fn call(params: Option<&Value>) -> Value {
                 Err(e) => tool_err(&e.to_string()),
             }
         }),
+        "lot_stills_generate" => with_path(&args, || {
+            let shot = args.get("shot").and_then(|v| v.as_str()).unwrap_or("");
+            let backend = args.get("backend").and_then(|v| v.as_str()).unwrap_or("");
+            let prompt = args.get("prompt").and_then(|v| v.as_str());
+            match lot_core::stills_generate(shot, backend, prompt) {
+                Ok((dir, show)) => tool_ok(&json!({
+                    "ok": true,
+                    "show": dir.display().to_string(),
+                    "rev": show.rev,
+                    "stills_backend": show.stills_backend,
+                    "shots": show.shots,
+                })),
+                Err(e) => tool_err(&e.to_string()),
+            }
+        }),
+        "lot_board_export" => with_path(&args, || match lot_core::board_export() {
+            Ok((dir, show, file)) => tool_ok(&json!({
+                "ok": true,
+                "show": dir.display().to_string(),
+                "rev": show.rev,
+                "export": file.display().to_string(),
+            })),
+            Err(e) => tool_err(&e.to_string()),
+        }),
         "lot_slate_set" => with_path(&args, || {
             let shot = args.get("shot").and_then(|v| v.as_str()).unwrap_or("");
             let prompt = args.get("prompt").and_then(|v| v.as_str()).unwrap_or("");
@@ -732,6 +778,8 @@ mod tests {
             "lot_writer_unlock",
             "lot_breakdown_import",
             "lot_breakdown_parse",
+            "lot_stills_generate",
+            "lot_board_export",
             "lot_dailies_ingest",
             "lot_dailies_circle",
             "lot_dailies_export",

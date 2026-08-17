@@ -312,6 +312,7 @@ Original apps remain installed. Lot never deletes a user’s `.scriptbreak` / `.
 - Ingest by **filename prefix** (`01-foo.mp4` → shot 01).
 - Circle/export FCPXML. Expected duration = actual probe until the user asks for longer takes.
 - Stems soundtrack cue + VO generate (attach / `LOT_SOUNDTRACK_CMD` / local TTS). Never a silent stub.
+- Stills: `stills_generate backend=grok|comfy` (no silent swap). Board export → Slate prompts on the same shots.
 
 ### Phase 4 — Shell UI
 
@@ -350,6 +351,7 @@ Original apps remain installed. Lot never deletes a user’s `.scriptbreak` / `.
 - **AC-015:** `lot status --json` and `lot writer draft --show <path> --json` succeed with no display and no prompt; exit 0 writes a fountain file. `lot dailies circle` without `--take` exits non-zero, does not open a GUI.
 - **AC-016 (William bar):** Shell UI shows one show, current phase, and the agent’s last event with no folder dialog on the happy path. School is a dimmer (off = no lesson chrome). Not a gray form farm. Not a segregated “special” skin.
 - **AC-017:** `lot stems soundtrack --brief "…" --json` writes `stems/soundtrack-cue.md` and no wav. `--generate` without `LOT_SOUNDTRACK_CMD` exits non-zero (`no soundtrack engine —`) and still writes no wav. `lot writer style --format ad` stores `advertisement`; `--format mv` stores `music-video`.
+- **AC-018:** `lot stills generate --shot 01 --backend grok` never calls Comfy; `--backend comfy` never calls Grok. Missing engine → `no grok stills —` / `no comfy stills —` and **no** fake PNG. `lot board export` writes `board/board.json` from shots + stills + slate prompts.
 
 ---
 

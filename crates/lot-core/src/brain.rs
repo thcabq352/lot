@@ -202,6 +202,18 @@ pub fn complete_chat(system: &str, user: &str) -> Result<Completion, ShowError> 
     Err(ShowError::Msg(no_brain_message(&errors)))
 }
 
+/// First configured Grok credential. Token is for HTTP only — never log it.
+pub fn grok_auth() -> Option<(String, String, String)> {
+    let cands = resolve_candidates().ok()?;
+    cands.into_iter().find(|c| c.backend == "grok").map(|c| {
+        (
+            c.token,
+            normalize_base(&c.base_url),
+            c.auth_kind.to_string(),
+        )
+    })
+}
+
 fn no_brain_message(errors: &[String]) -> String {
     let mut s = String::from(
         "no brain — Grok (xAI OAuth / XAI_API_KEY) and local OpenAI-compat both unavailable",
@@ -569,6 +581,7 @@ mod tests {
             media: vec![],
             wall: vec![],
             stems: crate::stems::Stems::default(),
+            stills_backend: None,
             writer: Writer {
                 brief: "A clown loses the mask.".into(),
                 genres: vec!["drama".into()],
