@@ -1,6 +1,7 @@
 use crate::model::{filename_shot_prefix, shot_nums_match, MediaItem, Take};
 use crate::show::{
-    append_event, append_event_with, bump, require_current, write_show, Show, ShowError,
+    append_event, append_event_with, bump, require_write_current, write_show, Show,
+    ShowError,
 };
 use sha2::{Digest, Sha256};
 use std::fs;
@@ -11,14 +12,14 @@ pub fn dailies_ingest(
     file: Option<&Path>,
     dir: Option<&Path>,
 ) -> Result<(PathBuf, Show), ShowError> {
-    crate::caps::require_write()?;
-    let (show_dir, mut show) = require_current()?;
+    let (show_dir, mut show) = require_write_current()?;
     let mut files: Vec<PathBuf> = Vec::new();
     if let Some(f) = file {
-        files.push(f.to_path_buf());
+        files.push(crate::jail::allow_source(f, &show_dir)?);
     }
     if let Some(d) = dir {
-        collect_media(d, &mut files)?;
+        let d = crate::jail::allow_source(d, &show_dir)?;
+        collect_media(&d, &mut files)?;
     }
     if files.is_empty() {
         collect_media(&show_dir.join("media"), &mut files)?;
@@ -135,8 +136,7 @@ pub fn dailies_circle(take_id: &str) -> Result<(PathBuf, Show), ShowError> {
             "lot dailies circle needs --take (no GUI picker)".into(),
         ));
     }
-    crate::caps::require_write()?;
-    let (dir, mut show) = require_current()?;
+    let (dir, mut show) = require_write_current()?;
     let take = show
         .takes
         .iter_mut()
@@ -151,7 +151,7 @@ pub fn dailies_circle(take_id: &str) -> Result<(PathBuf, Show), ShowError> {
 
 pub fn dailies_export() -> Result<(PathBuf, Show, PathBuf), ShowError> {
     crate::caps::require(crate::caps::Cap::Export)?;
-    let (dir, show) = require_current()?;
+    let (dir, show) = require_write_current()?;
     let circled: Vec<&Take> = show.takes.iter().filter(|t| t.circled).collect();
     if circled.is_empty() {
         return Err(ShowError::Msg(

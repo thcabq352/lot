@@ -1,7 +1,7 @@
 //! Optional end-of-pipeline upscale + FPS pickup. Never a silent stub.
 
 use crate::model::MediaItem;
-use crate::show::{append_event_with, bump, require_current, write_show, Show, ShowError};
+use crate::show::{append_event_with, bump, write_show, Show, ShowError};
 use crate::Provenance;
 use serde_json::json;
 use std::fs;
@@ -35,12 +35,14 @@ pub fn finish_pickup(
 
     if upscale {
         crate::caps::require(crate::caps::Cap::Render)?;
-    } else {
-        crate::caps::require_write()?;
     }
-    let (dir, mut show) = require_current()?;
+    let (dir, mut show) = crate::show::require_write_current()?;
+    if upscale {
+        crate::budget::require_render(&show)?;
+    }
     let started = Instant::now();
     let src = resolve_src(&show, file)?;
+    let src = crate::jail::allow_source(&src, &dir)?;
     if !src.is_file() {
         return Err(ShowError::Msg(format!("not a file: {}", src.display())));
     }
@@ -175,6 +177,9 @@ fn record(
     show.finish.path = Some(path_s.clone());
     show.finish.upscaled = upscaled;
     show.finish.fps = fps.map(str::to_string);
+    if upscaled {
+        crate::budget::record_render(show);
+    }
     show.finish.provenance = Some(
         Provenance::new("finish", model, "", engine)
             .with_prompt(&filter)

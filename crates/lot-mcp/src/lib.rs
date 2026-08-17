@@ -1,3 +1,5 @@
+#![recursion_limit = "512"]
+
 use serde_json::{json, Value};
 use std::io::{self, BufRead, Write};
 use std::path::Path;
@@ -33,7 +35,7 @@ pub fn handle(msg: &Value) -> Option<Value> {
             id,
             json!({
                 "protocolVersion": PROTOCOL,
-                "capabilities": { "tools": {} },
+                "capabilities": { "tools": {}, "resources": {} },
                 "serverInfo": { "name": "lot", "version": lot_core::VERSION }
             }),
         )),
@@ -41,6 +43,8 @@ pub fn handle(msg: &Value) -> Option<Value> {
         "ping" => Some(ok(id, json!({}))),
         "tools/list" => Some(ok(id, json!({ "tools": tools() }))),
         "tools/call" => Some(ok(id, call(msg.get("params")))),
+        "resources/list" => Some(ok(id, resources_list())),
+        "resources/read" => Some(ok(id, resources_read(msg.get("params")))),
         _ => {
             if id.is_some() {
                 Some(err(id, -32601, &format!("Method not found: {method}")))
@@ -59,6 +63,10 @@ fn cap_prop() -> Value {
     json!({ "type": "string", "description": "Agent caps: read | write | render | export | spend | all. Unset = all. AC-012." })
 }
 
+fn agent_prop() -> Value {
+    json!({ "type": "string", "description": "Who is writing (hermes, cursor, …). Unset = human (no auto-claim). Second writer gets locked_by." })
+}
+
 fn tools() -> Value {
     json!([
         {
@@ -66,7 +74,7 @@ fn tools() -> Value {
             "description": "First call. Kernel + current show. No GUI.",
             "inputSchema": {
                 "type": "object",
-                "properties": { "path": path_prop(), "cap": cap_prop() }
+                "properties": { "path": path_prop(), "cap": cap_prop(), "agent": agent_prop() }
             }
         },
         {
@@ -76,7 +84,8 @@ fn tools() -> Value {
                 "type": "object",
                 "properties": {
                     "path": { "type": "string", "description": "Directory to create." },
-                    "name": { "type": "string", "description": "Show title." }
+                    "name": { "type": "string", "description": "Show title." },
+                    "agent": agent_prop()
                 },
                 "required": ["path"]
             }
@@ -500,6 +509,135 @@ fn tools() -> Value {
             }
         },
         {
+            "name": "lot_lock",
+            "description": "Claim the show. One writer at a time. Second agent gets locked_by, not a silent clobber.",
+            "inputSchema": {
+                "type": "object",
+                "properties": {
+                    "path": path_prop(),
+                    "cap": cap_prop(),
+                    "agent": agent_prop()
+                }
+            }
+        },
+        {
+            "name": "lot_unlock",
+            "description": "Release the show lock. Holder or force.",
+            "inputSchema": {
+                "type": "object",
+                "properties": {
+                    "force": { "type": "boolean", "description": "Unlock even if another agent holds it." },
+                    "path": path_prop(),
+                    "cap": cap_prop(),
+                    "agent": agent_prop()
+                }
+            }
+        },
+        {
+            "name": "lot_budget",
+            "description": "Set the show spend/render cap. Hit cap → stop. Unset = unlimited. Agent caps are separate.",
+            "inputSchema": {
+                "type": "object",
+                "properties": {
+                    "spend": { "type": "integer", "description": "Show spend cap (Grok stills). 0 blocks the next spend." },
+                    "render": { "type": "integer", "description": "Show render cap (Comfy stills / finish --upscale)." },
+                    "clear_spend": { "type": "boolean" },
+                    "clear_render": { "type": "boolean" },
+                    "path": path_prop(),
+                    "cap": cap_prop(),
+                    "agent": agent_prop()
+                }
+            }
+        },
+        {
+            "name": "lot_log",
+            "description": "Audit log: who/what/rev. export=true writes audit/export.jsonl with tokens redacted.",
+            "inputSchema": {
+                "type": "object",
+                "properties": {
+                    "n": { "type": "integer", "description": "Last N events. Default 20." },
+                    "export": { "type": "boolean" },
+                    "path": path_prop(),
+                    "cap": cap_prop(),
+                    "agent": agent_prop()
+                }
+            }
+        },
+        {
+            "name": "lot_show",
+            "description": "Read lot://show. Meta, phase, lock, last event. Not the fountain.",
+            "inputSchema": {
+                "type": "object",
+                "properties": { "path": path_prop(), "cap": cap_prop() }
+            }
+        },
+        {
+            "name": "lot_scene",
+            "description": "Read lot://scenes/{id}.",
+            "inputSchema": {
+                "type": "object",
+                "properties": {
+                    "id": { "type": "string" },
+                    "path": path_prop(),
+                    "cap": cap_prop()
+                },
+                "required": ["id"]
+            }
+        },
+        {
+            "name": "lot_shot",
+            "description": "Read lot://shots/{id} (or num).",
+            "inputSchema": {
+                "type": "object",
+                "properties": {
+                    "id": { "type": "string" },
+                    "num": { "type": "string" },
+                    "path": path_prop(),
+                    "cap": cap_prop()
+                }
+            }
+        },
+        {
+            "name": "lot_take",
+            "description": "Read lot://takes/{id}.",
+            "inputSchema": {
+                "type": "object",
+                "properties": {
+                    "id": { "type": "string" },
+                    "path": path_prop(),
+                    "cap": cap_prop()
+                },
+                "required": ["id"]
+            }
+        },
+        {
+            "name": "lot_import",
+            "description": "Import .scriptbreak / .cork-board.json / canvas / .blockout / .sbref / Slate project.json / .ctake. Does not delete the source. No invented glTF or still.",
+            "inputSchema": {
+                "type": "object",
+                "properties": {
+                    "file": { "type": "string" },
+                    "path": path_prop(),
+                    "cap": cap_prop(),
+                    "agent": agent_prop()
+                },
+                "required": ["file"]
+            }
+        },
+        {
+            "name": "lot_handoff",
+            "description": "Advance phase. Default is dry-run. commit=true writes only when the gate passes. cut — no next.",
+            "inputSchema": {
+                "type": "object",
+                "properties": {
+                    "commit": { "type": "boolean", "description": "Write the next phase. Default false (dry-run)." },
+                    "path": path_prop(),
+                    "cap": cap_prop(),
+                    "agent": agent_prop()
+                }
+            }
+        },
+        {
             "name": "lot_help",
             "description": "Machine-readable spec. The binary is the contract.",
             "inputSchema": { "type": "object", "properties": {} }
@@ -525,7 +663,11 @@ fn call(params: Option<&Value>) -> Value {
         Ok(c) => c,
         Err(e) => return tool_err(&e),
     };
-    lot_core::with_caps(caps, || dispatch(name, &args))
+    let agent = args
+        .get("agent")
+        .and_then(|v| v.as_str())
+        .map(|s| s.to_string());
+    lot_core::with_caps(caps, || lot_core::with_agent(agent, || dispatch(name, &args)))
 }
 
 fn cap_from_args(args: &Value) -> Result<Option<lot_core::Caps>, String> {
@@ -564,13 +706,11 @@ fn dispatch(name: &str, args: &Value) -> Value {
             }
             let name = args.get("name").and_then(|v| v.as_str());
             match lot_core::create_show(Path::new(path), name) {
-                Ok((dir, show)) => tool_ok(&json!({
-                    "ok": true,
-                    "show": dir.display().to_string(),
-                    "id": show.id,
-                    "name": show.name,
-                    "rev": show.rev,
-                })),
+                Ok((dir, show)) => mut_ok(
+                    &dir,
+                    &show,
+                    json!({ "id": show.id, "name": show.name }),
+                ),
                 Err(e) => tool_err(&e.to_string()),
             }
         }
@@ -596,12 +736,11 @@ fn dispatch(name: &str, args: &Value) -> Value {
                 return tool_err("text is required");
             }
             match lot_core::set_brief(text) {
-                Ok((dir, show)) => tool_ok(&json!({
-                    "ok": true,
-                    "show": dir.display().to_string(),
-                    "rev": show.rev,
-                    "brief": show.writer.brief,
-                })),
+                Ok((dir, show)) => mut_ok(
+                    &dir,
+                    &show,
+                    json!({ "brief": show.writer.brief }),
+                ),
                 Err(e) => tool_err(&e.to_string()),
             }
         }),
@@ -1093,6 +1232,121 @@ fn dispatch(name: &str, args: &Value) -> Value {
                 Err(e) => tool_err(&e.to_string()),
             }
         }),
+        "lot_lock" => with_path(&args, || match lot_core::lock_show() {
+            Ok((dir, show)) => mut_ok(&dir, &show, json!({ "locked_by": show.locked_by })),
+            Err(e) => tool_err(&e.to_string()),
+        }),
+        "lot_unlock" => with_path(&args, || {
+            let force = args.get("force").and_then(|v| v.as_bool()).unwrap_or(false);
+            match lot_core::unlock_show(force) {
+                Ok((dir, show)) => tool_ok(&json!({
+                    "ok": true,
+                    "show": dir.display().to_string(),
+                    "rev": show.rev,
+                    "locked_by": show.locked_by,
+                })),
+                Err(e) => tool_err(&e.to_string()),
+            }
+        }),
+        "lot_budget" => with_path(&args, || {
+            let spend = args.get("spend").and_then(|v| v.as_u64()).map(|n| n as u32);
+            let render = args.get("render").and_then(|v| v.as_u64()).map(|n| n as u32);
+            let clear_spend = args
+                .get("clear_spend")
+                .or_else(|| args.get("clear-spend"))
+                .and_then(|v| v.as_bool())
+                .unwrap_or(false);
+            let clear_render = args
+                .get("clear_render")
+                .or_else(|| args.get("clear-render"))
+                .and_then(|v| v.as_bool())
+                .unwrap_or(false);
+            match lot_core::set_budget(spend, render, clear_spend, clear_render) {
+                Ok((dir, show)) => mut_ok(&dir, &show, json!({ "budget": show.budget })),
+                Err(e) => tool_err(&e.to_string()),
+            }
+        }),
+        "lot_log" => with_path(&args, || {
+            let export = args.get("export").and_then(|v| v.as_bool()).unwrap_or(false);
+            if export {
+                match lot_core::export_log() {
+                    Ok((dir, show, dest, count)) => mut_ok(
+                        &dir,
+                        &show,
+                        json!({
+                            "export": dest.display().to_string(),
+                            "events": count,
+                        }),
+                    ),
+                    Err(e) => tool_err(&e.to_string()),
+                }
+            } else {
+                let n = args.get("n").and_then(|v| v.as_u64()).unwrap_or(20) as u32;
+                match lot_core::show_log(Some(n)) {
+                    Ok((dir, show, events)) => mut_ok(
+                        &dir,
+                        &show,
+                        json!({ "events": events, "n": events.len() }),
+                    ),
+                    Err(e) => tool_err(&e.to_string()),
+                }
+            }
+        }),
+        "lot_show" => with_path(&args, || card_tool("lot://show")),
+        "lot_scene" => with_path(&args, || {
+            let id = args.get("id").and_then(|v| v.as_str()).unwrap_or("");
+            if id.is_empty() {
+                return tool_err("id is required");
+            }
+            card_tool(&format!("lot://scenes/{id}"))
+        }),
+        "lot_shot" => with_path(&args, || {
+            let key = args
+                .get("id")
+                .and_then(|v| v.as_str())
+                .or_else(|| args.get("num").and_then(|v| v.as_str()))
+                .unwrap_or("");
+            if key.is_empty() {
+                return tool_err("shot needs id or num");
+            }
+            card_tool(&format!("lot://shots/{key}"))
+        }),
+        "lot_take" => with_path(&args, || {
+            let id = args.get("id").and_then(|v| v.as_str()).unwrap_or("");
+            if id.is_empty() {
+                return tool_err("id is required");
+            }
+            card_tool(&format!("lot://takes/{id}"))
+        }),
+        "lot_import" => with_path(&args, || {
+            let file = args.get("file").and_then(|v| v.as_str()).unwrap_or("");
+            if file.is_empty() {
+                return tool_err("file is required");
+            }
+            match lot_core::import_file(Path::new(file)) {
+                Ok((dir, show, report)) => mut_ok(
+                    &dir,
+                    &show,
+                    json!({
+                        "kind": report.kind,
+                        "source": report.source,
+                        "kept": report.kept,
+                        "added": report.added,
+                    }),
+                ),
+                Err(e) => tool_err(&e.to_string()),
+            }
+        }),
+        "lot_handoff" => with_path(&args, || {
+            let commit = args.get("commit").and_then(|v| v.as_bool()).unwrap_or(false);
+            match lot_core::handoff(commit) {
+                Ok((dir, show, report)) => {
+                    let extra = serde_json::to_value(&report).unwrap_or(json!({}));
+                    mut_ok(&dir, &show, extra)
+                }
+                Err(e) => tool_err(&e.to_string()),
+            }
+        }),
         "lot_help" => tool_ok(&lot_core::help_spec()),
         "lot_doctor" => {
             let d = lot_core::Doctor::probe();
@@ -1148,6 +1402,64 @@ fn str_list(args: &Value, key: &str) -> Option<Vec<String>> {
     None
 }
 
+fn resources_list() -> Value {
+    match lot_core::resource_list() {
+        Ok((_, _, list)) => {
+            let resources: Vec<Value> = list
+                .iter()
+                .map(|r| {
+                    json!({
+                        "uri": r.uri,
+                        "name": r.name,
+                        "mimeType": r.mime_type,
+                        "description": r.description,
+                    })
+                })
+                .collect();
+            json!({ "resources": resources })
+        }
+        Err(e) => json!({ "resources": [], "error": e.to_string() }),
+    }
+}
+
+fn resources_read(params: Option<&Value>) -> Value {
+    let uri = params
+        .and_then(|p| p.get("uri"))
+        .and_then(|v| v.as_str())
+        .unwrap_or("");
+    if uri.is_empty() {
+        return json!({ "contents": [], "error": "uri is required" });
+    }
+    match lot_core::resource_read(uri) {
+        Ok((_, _, card)) => json!({
+            "contents": [{
+                "uri": uri,
+                "mimeType": "application/json",
+                "text": card.to_string(),
+            }]
+        }),
+        Err(e) => json!({
+            "contents": [{
+                "uri": uri,
+                "mimeType": "text/plain",
+                "text": e.to_string(),
+            }],
+            "isError": true
+        }),
+    }
+}
+
+fn card_tool(uri: &str) -> Value {
+    match lot_core::resource_read(uri) {
+        Ok((dir, show, card)) => mut_ok(&dir, &show, json!({ "uri": uri, "resource": card })),
+        Err(e) => tool_err(&e.to_string()),
+    }
+}
+
+fn mut_ok(dir: &Path, show: &lot_core::Show, extra: Value) -> Value {
+    tool_ok(&lot_core::mutation_json(dir, show, extra))
+}
+
 fn tool_ok(v: &Value) -> Value {
     json!({
         "content": [{ "type": "text", "text": v.to_string() }]
@@ -1190,6 +1502,7 @@ mod tests {
         let r = handle(&json!({"jsonrpc":"2.0","id":1,"method":"initialize","params":{}})).unwrap();
         assert_eq!(r["result"]["serverInfo"]["name"], "lot");
         assert_eq!(r["result"]["protocolVersion"], PROTOCOL);
+        assert!(r["result"]["capabilities"].get("resources").is_some());
     }
 
     #[test]
@@ -1219,6 +1532,16 @@ mod tests {
             "lot_stage_export",
             "lot_snapshot",
             "lot_restore",
+            "lot_lock",
+            "lot_unlock",
+            "lot_budget",
+            "lot_log",
+            "lot_handoff",
+            "lot_show",
+            "lot_scene",
+            "lot_shot",
+            "lot_take",
+            "lot_import",
             "lot_help",
             "lot_stills_generate",
             "lot_stills_describe",

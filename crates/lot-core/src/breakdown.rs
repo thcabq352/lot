@@ -1,17 +1,17 @@
 use crate::model::{shot_num_from_scene, Beat, Scene, Shot};
 use crate::parse::{import_scriptbreak_json, parse_script};
 use crate::show::{
-    append_event, append_event_with, bump, require_current, write_show, Show, ShowError,
+    append_event, append_event_with, bump, require_write_current, write_show, Show, ShowError,
     SCREENPLAY_FILE,
 };
 use std::fs;
 use std::path::Path;
 
 pub fn breakdown_parse(file: Option<&Path>) -> Result<(std::path::PathBuf, Show), ShowError> {
-    crate::caps::require_write()?;
-    let (dir, mut show) = require_current()?;
+    let (dir, mut show) = require_write_current()?;
     let (text, filename) = if let Some(p) = file {
-        let raw = fs::read_to_string(p)?;
+        let p = crate::jail::allow_source(p, &dir)?;
+        let raw = fs::read_to_string(&p)?;
         let name = p
             .file_name()
             .and_then(|s| s.to_str())
@@ -24,7 +24,7 @@ pub fn breakdown_parse(file: Option<&Path>) -> Result<(std::path::PathBuf, Show)
             && (raw.contains("\"scenes\"") || raw.contains("scriptbreak"))
         {
             let parsed = import_scriptbreak_json(&raw).map_err(|e| ShowError::Msg(e))?;
-            apply_parsed(&dir, &mut show, parsed, Some(p))?;
+            apply_parsed(&dir, &mut show, parsed, Some(p.as_path()))?;
             return Ok((dir, show));
         }
         // Copy into the show; never delete the source.
@@ -125,8 +125,7 @@ pub fn breakdown_summary(show: &Show) -> serde_json::Value {
 }
 
 pub fn wall_add(act: Option<&str>, text: &str) -> Result<(std::path::PathBuf, Show), ShowError> {
-    crate::caps::require_write()?;
-    let (dir, mut show) = require_current()?;
+    let (dir, mut show) = require_write_current()?;
     let text = text.trim();
     if text.is_empty() {
         return Err(ShowError::Msg("wall needs --text".into()));
@@ -145,8 +144,7 @@ pub fn wall_add(act: Option<&str>, text: &str) -> Result<(std::path::PathBuf, Sh
 }
 
 pub fn picture_lock(shot_num: &str, locked: bool) -> Result<(std::path::PathBuf, Show), ShowError> {
-    crate::caps::require_write()?;
-    let (dir, mut show) = require_current()?;
+    let (dir, mut show) = require_write_current()?;
     let shot = show
         .shots
         .iter_mut()

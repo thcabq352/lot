@@ -4,7 +4,7 @@
 use crate::brain::{complete_vision, grok_auth};
 use crate::model::{shot_nums_match, MediaItem};
 use crate::show::{
-    append_event, append_event_with, bump, require_current, write_show, Show, ShowError,
+    append_event, append_event_with, bump, require_write_current, write_show, Show, ShowError,
 };
 use crate::Provenance;
 use base64::Engine;
@@ -104,7 +104,12 @@ pub fn stills_generate(
         "comfy" => crate::caps::require(crate::caps::Cap::Render)?,
         _ => crate::caps::require_write()?,
     }
-    let (dir, mut show) = require_current()?;
+    let (dir, mut show) = require_write_current()?;
+    match backend {
+        "grok" => crate::budget::require_spend(&show)?,
+        "comfy" => crate::budget::require_render(&show)?,
+        _ => {}
+    }
     let shot_i = show
         .shots
         .iter()
@@ -131,6 +136,11 @@ pub fn stills_generate(
         "comfy" => generate_comfy(&text)?,
         _ => unreachable!(),
     };
+    match backend {
+        "grok" => crate::budget::record_spend(&mut show),
+        "comfy" => crate::budget::record_render(&mut show),
+        _ => {}
+    }
     let ext = ext_from_bytes(&bytes);
     let dest = dir.join("stills").join(format!("{num}.{ext}"));
     fs::write(&dest, &bytes)?;
@@ -171,13 +181,15 @@ pub fn stills_generate(
 /// Look at a still, plate frame, or --file. Grok vision #1 when online; Ollama VL locally.
 /// Never invent a description if no vision brain answers.
 pub fn stills_describe(shot_num: &str, file: Option<&Path>) -> Result<(PathBuf, Show), ShowError> {
-    crate::caps::require_write()?;
-    let (dir, mut show) = require_current()?;
+    let (dir, mut show) = require_write_current()?;
     let shot_i = show
         .shots
         .iter()
         .position(|s| shot_nums_match(&s.num, shot_num))
         .ok_or_else(|| ShowError::Msg(format!("unknown shot: {shot_num}")))?;
+    if let Some(p) = file {
+        crate::jail::allow_source(p, &dir)?;
+    }
     let (bytes, mime, source) = load_look_image(&show.shots[shot_i], file)?;
     let shot = &show.shots[shot_i];
     let mut user = format!("Show: {}\nShot: {}", show.name, shot.num);
@@ -217,7 +229,7 @@ pub fn stills_describe(shot_num: &str, file: Option<&Path>) -> Result<(PathBuf, 
 
 pub fn board_export() -> Result<(PathBuf, Show, PathBuf), ShowError> {
     crate::caps::require(crate::caps::Cap::Export)?;
-    let (dir, mut show) = require_current()?;
+    let (dir, mut show) = require_write_current()?;
     if show.shots.is_empty() {
         return Err(ShowError::Msg(
             "board export needs shots (breakdown parse, then stills / slate)".into(),

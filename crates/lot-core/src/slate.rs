@@ -5,7 +5,7 @@ use crate::brain::complete_chat;
 use crate::model::{shot_nums_match, SlateLora};
 use crate::packs::{self, lookup};
 use crate::show::{
-    append_event, append_event_with, bump, require_current, write_show, Show, ShowError,
+    append_event, append_event_with, bump, write_show, Show, ShowError,
 };
 use serde_json::{json, Value};
 use std::path::PathBuf;
@@ -22,7 +22,6 @@ pub fn slate_set(
     prompt: &str,
     target: Option<&str>,
 ) -> Result<(PathBuf, Show), ShowError> {
-    crate::caps::require_write()?;
     let text = prompt.trim();
     if text.is_empty() {
         return Err(ShowError::Msg("slate needs --prompt".into()));
@@ -31,7 +30,7 @@ pub fn slate_set(
         Some(raw) => Some(packs::resolve_prompt_target(raw)?),
         None => None,
     };
-    let (dir, mut show) = require_current()?;
+    let (dir, mut show) = crate::show::require_write_current()?;
     let shot = show
         .shots
         .iter_mut()
@@ -56,9 +55,8 @@ pub fn slate_set(
 }
 
 pub fn slate_target(id: &str) -> Result<(PathBuf, Show), ShowError> {
-    crate::caps::require_write()?;
     let id = packs::resolve_prompt_target(id)?;
-    let (dir, mut show) = require_current()?;
+    let (dir, mut show) = crate::show::require_write_current()?;
     show.slate.default_target = Some(id);
     show.phase = "slate".into();
     bump(&mut show);
@@ -73,7 +71,6 @@ pub fn slate_lora(
     weight: Option<&str>,
     model: Option<&str>,
 ) -> Result<(PathBuf, Show), ShowError> {
-    crate::caps::require_write()?;
     let id = id.trim();
     if id.is_empty() {
         return Err(ShowError::Msg("slate lora needs --id".into()));
@@ -87,7 +84,7 @@ pub fn slate_lora(
             .to_string(),
         model: model.unwrap_or("").trim().to_string(),
     };
-    let (dir, mut show) = require_current()?;
+    let (dir, mut show) = crate::show::require_write_current()?;
     if let Some(num) = shot_num.map(str::trim).filter(|s| !s.is_empty()) {
         let shot = show
             .shots
@@ -114,8 +111,7 @@ fn upsert_lora(list: &mut Vec<SlateLora>, lora: SlateLora) {
 }
 
 pub fn slate_compile(shot_num: &str, target: Option<&str>) -> Result<(PathBuf, Show), ShowError> {
-    crate::caps::require_write()?;
-    let (dir, mut show) = require_current()?;
+    let (dir, mut show) = crate::show::require_write_current()?;
     let target = match target.map(str::trim).filter(|s| !s.is_empty()) {
         Some(raw) => packs::resolve_prompt_target(raw)?,
         None => show.slate.default_target.clone().ok_or_else(|| {

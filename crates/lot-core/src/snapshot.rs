@@ -9,8 +9,7 @@ use std::fs;
 use std::path::{Path, PathBuf};
 
 pub fn snapshot_show() -> Result<(PathBuf, Show, PathBuf, u64), ShowError> {
-    crate::caps::require_write()?;
-    let (dir, show) = require_current()?;
+    let (dir, show) = crate::show::require_write_current()?;
     let dest = dir.join("snapshots").join(format!("rev-{}", show.rev));
     fs::create_dir_all(&dest)?;
     fs::copy(dir.join(SHOW_FILE), dest.join(SHOW_FILE))?;
@@ -46,8 +45,7 @@ pub fn snapshot_list() -> Result<(PathBuf, Show, Vec<u64>), ShowError> {
 }
 
 pub fn restore_show(rev: u64) -> Result<(PathBuf, Show), ShowError> {
-    crate::caps::require_write()?;
-    let (dir, current) = require_current()?;
+    let (dir, current) = crate::show::require_write_current()?;
     let src = dir.join("snapshots").join(format!("rev-{rev}"));
     let snap_json = src.join(SHOW_FILE);
     if !snap_json.is_file() {
@@ -79,6 +77,9 @@ pub fn restore_show(rev: u64) -> Result<(PathBuf, Show), ShowError> {
         fs::copy(&fountain_src, dir.join(SCREENPLAY_FILE))?;
         snap.writer.draft_path = Some(dir.join(SCREENPLAY_FILE).display().to_string());
     }
+    snap.locked_by = current.locked_by.clone();
+    snap.locked_at = current.locked_at.clone();
+    snap.budget = current.budget.clone();
     snap.rev = current.rev;
     bump(&mut snap);
     write_show(&dir, &snap)?;

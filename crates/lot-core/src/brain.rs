@@ -1092,6 +1092,9 @@ mod tests {
             stills_backend: None,
             slate: crate::model::SlateState::default(),
             finish: crate::model::FinishState::default(),
+            locked_by: None,
+            locked_at: None,
+            budget: crate::budget::Budget::default(),
             writer: Writer {
                 brief: "A clown loses the mask.".into(),
                 genres: vec!["drama".into()],

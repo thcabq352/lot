@@ -3,7 +3,7 @@
 
 use crate::model::MediaItem;
 use crate::show::{
-    append_event_with, bump, require_current, write_show, Show, ShowError,
+    append_event_with, bump, write_show, Show, ShowError,
 };
 use crate::Provenance;
 use serde::{Deserialize, Serialize};
@@ -35,8 +35,7 @@ pub fn stems_soundtrack(
     file: Option<&Path>,
     generate: bool,
 ) -> Result<(PathBuf, Show), ShowError> {
-    crate::caps::require_write()?;
-    let (dir, mut show) = require_current()?;
+    let (dir, mut show) = crate::show::require_write_current()?;
     if let Some(b) = brief {
         show.stems.soundtrack_brief = b.trim().to_string();
     }
@@ -48,6 +47,7 @@ pub fn stems_soundtrack(
     fs::create_dir_all(dir.join("stems"))?;
 
     if let Some(p) = file {
+        let p = crate::jail::allow_source(p, &dir)?;
         if !p.is_file() {
             return Err(ShowError::Msg(format!("not a file: {}", p.display())));
         }
@@ -147,8 +147,7 @@ pub fn stems_vo(
     file: Option<&Path>,
     generate: bool,
 ) -> Result<(PathBuf, Show), ShowError> {
-    crate::caps::require_write()?;
-    let (dir, mut show) = require_current()?;
+    let (dir, mut show) = crate::show::require_write_current()?;
     if let Some(t) = text {
         show.stems.vo_text = t.trim().to_string();
     }
@@ -158,6 +157,7 @@ pub fn stems_vo(
     fs::create_dir_all(dir.join("stems"))?;
 
     if let Some(p) = file {
+        let p = crate::jail::allow_source(p, &dir)?;
         if !p.is_file() {
             return Err(ShowError::Msg(format!("not a file: {}", p.display())));
         }

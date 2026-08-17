@@ -3,7 +3,7 @@
 
 use crate::model::{shot_nums_match, MediaItem};
 use crate::show::{
-    append_event, append_event_with, bump, require_current, write_show, Show, ShowError,
+    append_event, append_event_with, bump, write_show, Show, ShowError,
 };
 use serde_json::json;
 use std::fs;
@@ -34,12 +34,12 @@ pub fn motion_plate(
     shot_num: &str,
     mode: Option<&str>,
 ) -> Result<(PathBuf, Show), ShowError> {
-    crate::caps::require_write()?;
     if !file.is_file() {
         return Err(ShowError::Msg(format!("not a file: {}", file.display())));
     }
     let mode = resolve_motion_mode(mode)?;
-    let (dir, mut show) = require_current()?;
+    let (dir, mut show) = crate::show::require_write_current()?;
+    let file = crate::jail::allow_source(file, &dir)?;
     let shot_i = show
         .shots
         .iter()
@@ -90,7 +90,6 @@ pub fn motion_marks(
     notes: Option<&str>,
     mode: Option<&str>,
 ) -> Result<(PathBuf, Show), ShowError> {
-    crate::caps::require_write()?;
     let mode = resolve_motion_mode(mode)?;
     let move_kind = move_kind.map(str::trim).filter(|s| !s.is_empty());
     let notes = notes.map(str::trim).filter(|s| !s.is_empty());
@@ -99,7 +98,7 @@ pub fn motion_marks(
             "motion marks need --move, --notes, or --mode".into(),
         ));
     }
-    let (dir, mut show) = require_current()?;
+    let (dir, mut show) = crate::show::require_write_current()?;
     let shot = show
         .shots
         .iter_mut()
@@ -124,7 +123,7 @@ pub fn motion_marks(
 
 pub fn motion_export() -> Result<(PathBuf, Show, PathBuf), ShowError> {
     crate::caps::require(crate::caps::Cap::Export)?;
-    let (dir, mut show) = require_current()?;
+    let (dir, mut show) = crate::show::require_write_current()?;
     if show.shots.is_empty() {
         return Err(ShowError::Msg(
             "motion export needs shots (breakdown parse, then motion plate / marks)".into(),
@@ -194,8 +193,7 @@ pub fn motion_export() -> Result<(PathBuf, Show, PathBuf), ShowError> {
 }
 
 pub fn motion_analyze(shot_num: &str) -> Result<(PathBuf, Show), ShowError> {
-    crate::caps::require_write()?;
-    let (dir, mut show) = require_current()?;
+    let (dir, mut show) = crate::show::require_write_current()?;
     let shot_i = show
         .shots
         .iter()

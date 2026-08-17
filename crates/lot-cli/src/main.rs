@@ -1,12 +1,14 @@
 use clap::{Parser, Subcommand};
 use lot_core::{
     board_export, breakdown_parse, breakdown_summary, create_show, dailies_circle, dailies_export,
-    dailies_ingest, draft_screenplay, finish_pickup, help_plain, help_spec, lock_writer,
+    export_log, handoff, import_file,
+    dailies_ingest, draft_screenplay, finish_pickup, help_plain, help_spec, lock_show, lock_writer,
     motion_analyze, motion_export, motion_marks, motion_plate, open_show, picture_lock,
-    replace_cast_json, restore_show, revise_screenplay, set_brief, set_style, slate_compile,
+    mutation_json, replace_cast_json, resource_read, restore_show, revise_screenplay, set_brief, set_budget,
+    set_style, show_log, slate_compile,
     slate_lora, slate_set, slate_target, snapshot_list, snapshot_show, stage_camera, stage_export,
     stage_place, stems_soundtrack, stems_vo, stills_describe, stills_generate, unlock_writer,
-    upsert_cast, wall_add, Doctor, Status,
+    unlock_show, upsert_cast, wall_add, Doctor, Status,
 };
 use std::path::{Path, PathBuf};
 use std::process::ExitCode;
@@ -27,6 +29,9 @@ struct Cli {
     /// Agent caps: read | write | render | export | spend | all. Repeat or comma-separate. Unset = all.
     #[arg(long = "cap", global = true)]
     cap: Vec<String>,
+    /// Who is writing. Unset = human (no auto-claim). Second agent gets locked_by.
+    #[arg(long, global = true)]
+    agent: Option<String>,
     #[command(subcommand)]
     cmd: Option<Cmd>,
 }
@@ -43,6 +48,30 @@ enum Cmd {
     },
     /// Open an existing show.lot and make it current.
     Open { path: PathBuf },
+    /// Read lot://show (meta, phase, lock). Not the fountain.
+    Show,
+    /// Read lot://scenes/{id}.
+    Scene {
+        #[arg(long)]
+        id: String,
+    },
+    /// Read lot://shots/{id} (or --num).
+    Shot {
+        #[arg(long)]
+        id: Option<String>,
+        #[arg(long)]
+        num: Option<String>,
+    },
+    /// Read lot://takes/{id}.
+    Take {
+        #[arg(long)]
+        id: String,
+    },
+    /// Import an old-suite file. Does not delete the source.
+    Import {
+        #[arg(long)]
+        file: PathBuf,
+    },
     /// Writer: brief, style, cast, draft, revise, lock.
     Writer {
         #[command(subcommand)]
@@ -121,6 +150,36 @@ enum Cmd {
     Restore {
         #[arg(long)]
         rev: u64,
+    },
+    /// Claim the show. Second agent gets locked_by, not a silent clobber.
+    Lock,
+    /// Release the show lock. Holder or --force.
+    Unlock {
+        #[arg(long, default_value_t = false)]
+        force: bool,
+    },
+    /// Per-show spend / render budget. Hit cap → stop. Unset = unlimited.
+    Budget {
+        #[arg(long)]
+        spend: Option<u32>,
+        #[arg(long)]
+        render: Option<u32>,
+        #[arg(long = "clear-spend", default_value_t = false)]
+        clear_spend: bool,
+        #[arg(long = "clear-render", default_value_t = false)]
+        clear_render: bool,
+    },
+    /// Audit log: who / what / rev. --export redacts tokens.
+    Log {
+        #[arg(long, default_value_t = 20)]
+        n: u32,
+        #[arg(long, default_value_t = false)]
+        export: bool,
+    },
+    /// Advance phase. Default is dry-run. --commit writes only when the gate passes.
+    Handoff {
+        #[arg(long, default_value_t = false)]
+        commit: bool,
     },
     /// Machine-readable spec. lot help --json is the contract.
     Help,
@@ -389,6 +448,9 @@ fn main() -> ExitCode {
             Err(e) => return fail(cli.json, &e.to_string()),
         }
     }
+    if let Some(id) = cli.agent {
+        lot_core::set_agent(Some(id));
+    }
     match cli.cmd.unwrap_or(Cmd::Status) {
         Cmd::Status => {
             if let Some(code) = apply_show(cli.show.as_deref(), cli.json) {
@@ -397,45 +459,73 @@ fn main() -> ExitCode {
             print_status(cli.json)
         }
         Cmd::Create { path, name } => match create_show(&path, name.as_deref()) {
-            Ok((dir, show)) => {
-                if cli.json {
-                    println!(
-                        "{}",
-                        serde_json::json!({
-                            "ok": true,
-                            "show": dir.display().to_string(),
-                            "id": show.id,
-                            "name": show.name,
-                            "rev": show.rev,
-                        })
-                    );
-                } else {
-                    println!("created {} ({})", dir.display(), show.name);
-                }
-                ExitCode::SUCCESS
-            }
+            Ok((dir, show)) => ok_writer(
+                cli.json,
+                &dir,
+                &show,
+                serde_json::json!({ "id": show.id, "name": show.name }),
+                &format!("created {} ({})", dir.display(), show.name),
+            ),
             Err(e) => fail(cli.json, &e.to_string()),
         },
         Cmd::Open { path } => match open_show(&path) {
-            Ok((dir, show)) => {
-                if cli.json {
-                    println!(
-                        "{}",
-                        serde_json::json!({
-                            "ok": true,
-                            "show": dir.display().to_string(),
-                            "id": show.id,
-                            "name": show.name,
-                            "rev": show.rev,
-                        })
-                    );
-                } else {
-                    println!("opened {} ({})", dir.display(), show.name);
-                }
-                ExitCode::SUCCESS
-            }
+            Ok((dir, show)) => ok_writer(
+                cli.json,
+                &dir,
+                &show,
+                serde_json::json!({ "id": show.id, "name": show.name }),
+                &format!("opened {} ({})", dir.display(), show.name),
+            ),
             Err(e) => fail(cli.json, &e.to_string()),
         },
+        Cmd::Show => {
+            if let Some(code) = apply_show(cli.show.as_deref(), cli.json) {
+                return code;
+            }
+            card_cmd("lot://show", cli.json)
+        }
+        Cmd::Scene { id } => {
+            if let Some(code) = apply_show(cli.show.as_deref(), cli.json) {
+                return code;
+            }
+            card_cmd(&format!("lot://scenes/{id}"), cli.json)
+        }
+        Cmd::Shot { id, num } => {
+            if let Some(code) = apply_show(cli.show.as_deref(), cli.json) {
+                return code;
+            }
+            let key = id.or(num).unwrap_or_default();
+            if key.is_empty() {
+                return fail(cli.json, "shot needs --id or --num");
+            }
+            card_cmd(&format!("lot://shots/{key}"), cli.json)
+        }
+        Cmd::Take { id } => {
+            if let Some(code) = apply_show(cli.show.as_deref(), cli.json) {
+                return code;
+            }
+            card_cmd(&format!("lot://takes/{id}"), cli.json)
+        }
+        Cmd::Import { file } => {
+            if let Some(code) = apply_show(cli.show.as_deref(), cli.json) {
+                return code;
+            }
+            match import_file(&file) {
+                Ok((dir, show, report)) => ok_writer(
+                    cli.json,
+                    &dir,
+                    &show,
+                    serde_json::json!({
+                        "kind": report.kind,
+                        "source": report.source,
+                        "kept": report.kept,
+                        "added": report.added,
+                    }),
+                    &format!("imported {} ({})", report.kind, report.source),
+                ),
+                Err(e) => fail(cli.json, &e.to_string()),
+            }
+        }
         Cmd::Writer { cmd } => {
             if let Some(code) = apply_show(cli.show.as_deref(), cli.json) {
                 return code;
@@ -844,6 +934,129 @@ fn main() -> ExitCode {
                 Err(e) => fail(cli.json, &e.to_string()),
             }
         }
+        Cmd::Lock => {
+            if let Some(code) = apply_show(cli.show.as_deref(), cli.json) {
+                return code;
+            }
+            match lock_show() {
+                Ok((dir, show)) => ok_writer(
+                    cli.json,
+                    &dir,
+                    &show,
+                    serde_json::json!({ "locked_by": show.locked_by }),
+                    &format!(
+                        "locked by {}",
+                        show.locked_by.as_deref().unwrap_or("human")
+                    ),
+                ),
+                Err(e) => fail(cli.json, &e.to_string()),
+            }
+        }
+        Cmd::Unlock { force } => {
+            if let Some(code) = apply_show(cli.show.as_deref(), cli.json) {
+                return code;
+            }
+            match unlock_show(force) {
+                Ok((dir, show)) => ok_writer(
+                    cli.json,
+                    &dir,
+                    &show,
+                    serde_json::json!({ "locked_by": show.locked_by }),
+                    "unlocked",
+                ),
+                Err(e) => fail(cli.json, &e.to_string()),
+            }
+        }
+        Cmd::Budget {
+            spend,
+            render,
+            clear_spend,
+            clear_render,
+        } => {
+            if let Some(code) = apply_show(cli.show.as_deref(), cli.json) {
+                return code;
+            }
+            match set_budget(spend, render, clear_spend, clear_render) {
+                Ok((dir, show)) => ok_writer(
+                    cli.json,
+                    &dir,
+                    &show,
+                    serde_json::json!({ "budget": show.budget }),
+                    &format!(
+                        "budget spend={}/{} render={}/{}",
+                        show.budget.spend_used,
+                        show.budget
+                            .spend_cap
+                            .map(|n| n.to_string())
+                            .unwrap_or_else(|| "∞".into()),
+                        show.budget.render_used,
+                        show.budget
+                            .render_cap
+                            .map(|n| n.to_string())
+                            .unwrap_or_else(|| "∞".into()),
+                    ),
+                ),
+                Err(e) => fail(cli.json, &e.to_string()),
+            }
+        }
+        Cmd::Log { n, export } => {
+            if let Some(code) = apply_show(cli.show.as_deref(), cli.json) {
+                return code;
+            }
+            if export {
+                match export_log() {
+                    Ok((dir, show, dest, count)) => ok_writer(
+                        cli.json,
+                        &dir,
+                        &show,
+                        serde_json::json!({
+                            "export": dest.display().to_string(),
+                            "events": count,
+                        }),
+                        &format!("audit export {} ({count} events)", dest.display()),
+                    ),
+                    Err(e) => fail(cli.json, &e.to_string()),
+                }
+            } else {
+                match show_log(Some(n)) {
+                    Ok((dir, show, events)) => ok_writer(
+                        cli.json,
+                        &dir,
+                        &show,
+                        serde_json::json!({ "events": events, "n": events.len() }),
+                        &format!("log {} events ({})", events.len(), dir.display()),
+                    ),
+                    Err(e) => fail(cli.json, &e.to_string()),
+                }
+            }
+        }
+        Cmd::Handoff { commit } => {
+            if let Some(code) = apply_show(cli.show.as_deref(), cli.json) {
+                return code;
+            }
+            match handoff(commit) {
+                Ok((dir, show, report)) => {
+                    let extra = serde_json::to_value(&report).unwrap_or(serde_json::json!({}));
+                    let plain = if report.committed {
+                        format!("handoff {} → {}", report.from, report.phase)
+                    } else if report.ready {
+                        format!(
+                            "handoff ready {} → {}",
+                            report.from,
+                            report.next.as_deref().unwrap_or("-")
+                        )
+                    } else {
+                        format!(
+                            "handoff blocked {} — {}",
+                            report.from,
+                            report.missing.join("; ")
+                        )
+                    };
+                    ok_writer(cli.json, &dir, &show, extra, &plain)
+                }
+                Err(e) => fail(cli.json, &e.to_string()),
+            }
+        }
         Cmd::Help => {
             if cli.json {
                 println!("{}", help_spec());
@@ -1123,17 +1336,7 @@ fn ok_writer(
     plain: &str,
 ) -> ExitCode {
     if json {
-        let mut v = serde_json::json!({
-            "ok": true,
-            "show": dir.display().to_string(),
-            "rev": show.rev,
-        });
-        if let (Some(obj), Some(extra_obj)) = (v.as_object_mut(), extra.as_object()) {
-            for (k, val) in extra_obj {
-                obj.insert(k.clone(), val.clone());
-            }
-        }
-        println!("{v}");
+        println!("{}", mutation_json(dir, show, extra));
     } else {
         println!("{plain}");
     }
@@ -1144,13 +1347,14 @@ fn draft_ok(json: bool, dir: &Path, show: &lot_core::Show) -> ExitCode {
     if json {
         println!(
             "{}",
-            serde_json::json!({
-                "ok": true,
-                "show": dir.display().to_string(),
-                "rev": show.rev,
-                "draft": show.writer.draft_path,
-                "provenance": show.writer.draft_provenance,
-            })
+            mutation_json(
+                dir,
+                show,
+                serde_json::json!({
+                    "draft": show.writer.draft_path,
+                    "provenance": show.writer.draft_provenance,
+                }),
+            )
         );
     } else {
         let path = show
@@ -1170,6 +1374,19 @@ fn draft_ok(json: bool, dir: &Path, show: &lot_core::Show) -> ExitCode {
     ExitCode::SUCCESS
 }
 
+fn card_cmd(uri: &str, json: bool) -> ExitCode {
+    match resource_read(uri) {
+        Ok((dir, show, card)) => ok_writer(
+            json,
+            &dir,
+            &show,
+            serde_json::json!({ "uri": uri, "resource": card }),
+            &format!("{uri} ({})", dir.display()),
+        ),
+        Err(e) => fail(json, &e.to_string()),
+    }
+}
+
 fn print_status(json: bool) -> ExitCode {
     let mut st = Status::bootstrap();
     st.door = "cli";
@@ -1177,7 +1394,7 @@ fn print_status(json: bool) -> ExitCode {
         println!("{}", serde_json::to_string(&st).expect("status json"));
     } else {
         println!(
-            "lot {v}  school={s}  renderer={r}  cap={cap}  show={show}",
+            "lot {v}  school={s}  renderer={r}  cap={cap}  agent={agent}  locked_by={lock}  show={show}",
             v = st.version,
             s = if st.school.enabled { "on" } else { "off" },
             r = st.renderer,
@@ -1186,6 +1403,8 @@ fn print_status(json: bool) -> ExitCode {
             } else {
                 st.cap.join(",")
             },
+            agent = st.agent.as_deref().unwrap_or("-"),
+            lock = st.locked_by.as_deref().unwrap_or("-"),
             show = st.show.as_deref().unwrap_or("-"),
         );
     }

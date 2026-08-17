@@ -5,17 +5,25 @@ pub const NAME: &str = "lot";
 pub const SHOW_SCHEMA: u32 = 1;
 pub const SHOW_FILE: &str = "show.json";
 
+mod agent;
+mod audit;
 mod brain;
 mod breakdown;
+mod budget;
 mod caps;
 mod dailies;
+mod jail;
+mod lock;
 mod doctor;
 mod finish;
+mod handoff;
+mod import;
 mod help;
 mod model;
 mod motion;
 mod packs;
 mod parse;
+mod resource;
 mod show;
 mod slate;
 mod snapshot;
@@ -27,13 +35,20 @@ pub use brain::{
     complete_chat, complete_vision, draft_fountain, draft_user_prompt, hash_prompt, probe_ollama,
     revise_fountain, Completion, OllamaProbe, Provenance,
 };
+pub use agent::{clear_agent, current as current_agent, set_agent, with_agent};
+pub use audit::{export_log, last_event, mutation_json, show_log, EventMeta};
 pub use breakdown::{breakdown_parse, breakdown_summary, picture_lock, wall_add};
+pub use budget::{set_budget, Budget};
 pub use caps::{
     active as active_caps, clear_caps, parse_caps, set_caps, with_caps, Cap, Caps,
 };
+pub use lock::{lock_show, unlock_show};
 pub use dailies::{dailies_circle, dailies_export, dailies_ingest};
 pub use doctor::Doctor;
 pub use finish::finish_pickup;
+pub use handoff::{handoff, inspect as inspect_handoff, Handoff, PHASES as HANDOFF_PHASES};
+pub use import::{import_file, ImportReport};
+pub use resource::{resource_list, resource_read, ResourceRef};
 pub use help::{help_plain, help_spec};
 pub use model::{
     Beat, FinishState, MediaItem, Scene, Shot, SlateLora, SlateState, StageMark, Take,
@@ -70,6 +85,14 @@ pub struct Status {
     pub shots: Option<usize>,
     pub takes: Option<usize>,
     pub cap: Vec<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub locked_by: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub agent: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub budget: Option<Budget>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub last_event: Option<EventMeta>,
     pub doctor: Doctor,
     pub error: Option<String>,
 }
@@ -107,6 +130,10 @@ impl Status {
                     shots: Some(show.shots.len()),
                     takes: Some(show.takes.len()),
                     cap: cap.clone(),
+                    locked_by: show.locked_by.clone(),
+                    agent: crate::agent::current(),
+                    budget: Some(show.budget.clone()),
+                    last_event: crate::audit::last_event(&p),
                     doctor,
                     error: None,
                 },
@@ -125,6 +152,10 @@ impl Status {
                     shots: None,
                     takes: None,
                     cap: cap.clone(),
+                    locked_by: None,
+                    agent: crate::agent::current(),
+                    budget: None,
+                    last_event: None,
                     doctor,
                     error: Some(e.to_string()),
                 },
@@ -144,6 +175,10 @@ impl Status {
                 shots: None,
                 takes: None,
                 cap,
+                locked_by: None,
+                agent: crate::agent::current(),
+                budget: None,
+                last_event: None,
                 doctor,
                 error: None,
             },
@@ -162,6 +197,10 @@ impl Status {
                 shots: None,
                 takes: None,
                 cap,
+                locked_by: None,
+                agent: crate::agent::current(),
+                budget: None,
+                last_event: None,
                 doctor,
                 error: Some(e.to_string()),
             },

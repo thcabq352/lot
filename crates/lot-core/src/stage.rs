@@ -2,7 +2,7 @@
 
 use crate::model::{shot_nums_match, StageMark};
 use crate::show::{
-    append_event, append_event_with, bump, require_current, write_show, Show, ShowError,
+    append_event, append_event_with, bump, write_show, Show, ShowError,
 };
 use serde_json::json;
 use std::fs;
@@ -35,7 +35,6 @@ pub fn stage_place(
     notes: Option<&str>,
     kind: Option<&str>,
 ) -> Result<(PathBuf, Show), ShowError> {
-    crate::caps::require_write()?;
     let who = who.trim();
     if who.is_empty() {
         return Err(ShowError::Msg("stage place needs --who".into()));
@@ -50,7 +49,7 @@ pub fn stage_place(
         ));
     }
     let kind = resolve_mark_kind(who, kind);
-    let (dir, mut show) = require_current()?;
+    let (dir, mut show) = crate::show::require_write_current()?;
     let shot = show
         .shots
         .iter_mut()
@@ -102,7 +101,6 @@ pub fn stage_camera(
     lens: Option<&str>,
     move_kind: Option<&str>,
 ) -> Result<(PathBuf, Show), ShowError> {
-    crate::caps::require_write()?;
     let size = size.map(str::trim).filter(|s| !s.is_empty());
     let angle = angle.map(str::trim).filter(|s| !s.is_empty());
     let lens = lens.map(str::trim).filter(|s| !s.is_empty());
@@ -112,7 +110,7 @@ pub fn stage_camera(
             "stage camera needs --size, --angle, --lens, or --move".into(),
         ));
     }
-    let (dir, mut show) = require_current()?;
+    let (dir, mut show) = crate::show::require_write_current()?;
     let shot = show
         .shots
         .iter_mut()
@@ -139,7 +137,7 @@ pub fn stage_camera(
 
 pub fn stage_export() -> Result<(PathBuf, Show, PathBuf), ShowError> {
     crate::caps::require(crate::caps::Cap::Export)?;
-    let (dir, mut show) = require_current()?;
+    let (dir, mut show) = crate::show::require_write_current()?;
     if show.shots.is_empty() {
         return Err(ShowError::Msg(
             "stage export needs shots (breakdown parse, then stage place / camera)".into(),
