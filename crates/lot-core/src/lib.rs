@@ -12,13 +12,14 @@ mod breakdown;
 mod budget;
 mod caps;
 mod dailies;
-mod jail;
-mod lock;
+mod detail;
 mod doctor;
 mod finish;
 mod handoff;
-mod import;
 mod help;
+mod import;
+mod jail;
+mod lock;
 mod model;
 mod motion;
 mod packs;
@@ -31,29 +32,31 @@ mod stage;
 mod stems;
 mod stills;
 
+pub use agent::{clear_agent, current as current_agent, set_agent, with_agent};
+pub use audit::{export_log, last_event, mutation_json, show_log, EventMeta};
 pub use brain::{
     complete_chat, complete_vision, draft_fountain, draft_user_prompt, hash_prompt, probe_ollama,
     revise_fountain, Completion, OllamaProbe, Provenance,
 };
-pub use agent::{clear_agent, current as current_agent, set_agent, with_agent};
-pub use audit::{export_log, last_event, mutation_json, show_log, EventMeta};
 pub use breakdown::{breakdown_parse, breakdown_summary, picture_lock, wall_add};
 pub use budget::{set_budget, Budget};
-pub use caps::{
-    active as active_caps, clear_caps, parse_caps, set_caps, with_caps, Cap, Caps,
-};
-pub use lock::{lock_show, unlock_show};
+pub use caps::{active as active_caps, clear_caps, parse_caps, set_caps, with_caps, Cap, Caps};
 pub use dailies::{dailies_circle, dailies_export, dailies_ingest};
+pub use detail::{
+    clear_detail, detail_full, detail_full_active, detail_full_value, lean_extra, set_detail_full,
+    with_detail,
+};
 pub use doctor::Doctor;
 pub use finish::finish_pickup;
 pub use handoff::{handoff, inspect as inspect_handoff, Handoff, PHASES as HANDOFF_PHASES};
-pub use import::{import_file, ImportReport};
-pub use resource::{resource_list, resource_read, ResourceRef};
 pub use help::{help_plain, help_spec};
+pub use import::{import_file, ImportReport};
+pub use lock::{lock_show, unlock_show};
 pub use model::{
     Beat, FinishState, MediaItem, Scene, Shot, SlateLora, SlateState, StageMark, Take,
 };
 pub use motion::{motion_analyze, motion_export, motion_marks, motion_plate};
+pub use resource::{resource_list, resource_read, ResourceRef};
 pub use show::{
     create_show, current_show_path, draft_screenplay, lock_writer, open_show, read_show,
     replace_cast, replace_cast_json, require_current, revise_screenplay, set_brief,

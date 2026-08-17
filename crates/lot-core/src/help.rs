@@ -8,7 +8,7 @@ pub fn help_spec() -> Value {
         "version": crate::VERSION,
         "door": ["cli", "mcp"],
         "school_default": "off",
-        "notice": "Flags only. No TTY prompts. Exit 0 = ok. Do not click folder dialogs. --agent / LOT_AGENT / MCP agent: who writes (unset = human, no auto-claim). --cap / LOT_CAP / MCP cap: read|write|render|export|spend (unset = all). Jail = this show.lot + LOT_MEDIA_ROOTS; fountain is scene text (AC-013). Show budget: lot budget --spend/--render (hit cap → stop).",
+        "notice": "Flags only. No TTY prompts. Exit 0 = ok. Do not click folder dialogs. --agent / LOT_AGENT / MCP agent: who writes (unset = human, no auto-claim). --cap / LOT_CAP / MCP cap: read|write|render|export|spend (unset = all). --detail full / MCP detail=full dumps shot prompts and cards; default --json is lean (ids, counts, media path+sha256+duration). Jail = this show.lot + LOT_MEDIA_ROOTS; fountain is scene text (AC-013). Show budget: lot budget --spend/--render (hit cap → stop).",
         "verbs": [
             verb("lot status", "lot_status", "kernel", "First call. Kernel + current show."),
             verb("lot create <dir> --name", "lot_create", "kernel", "Create a show.lot and make it current."),
@@ -16,6 +16,7 @@ pub fn help_spec() -> Value {
             verb("lot doctor", "lot_doctor", "kernel", "Probe ffmpeg, Comfy, brains, Studio, Blockout."),
             verb("lot --cap read|write|render|export|spend", "", "kernel", "AC-012. Unset = all. read cannot circle or stills generate. write cannot Comfy/Grok spend without render/spend."),
             verb("lot --agent <id>", "", "kernel", "Who writes. Unset = human (no auto-claim). Second agent gets locked_by."),
+            verb("lot --detail full", "", "kernel", "Dump full shot/prompt cards on --json. Default is lean. MCP: detail=full."),
             verb("lot lock", "lot_lock", "kernel", "Claim the show. One writer at a time."),
             verb("lot unlock [--force]", "lot_unlock", "kernel", "Release the show lock. Holder or --force."),
             verb("lot budget --spend --render", "lot_budget", "kernel", "Per-show spend/render cap. Hit cap → stop. Unset = unlimited. Agent caps are separate."),
@@ -106,6 +107,10 @@ mod tests {
             assert!(mcps.contains(&n), "missing {n} in {mcps:?}");
         }
         assert_eq!(v["school_default"], "off");
+        assert!(
+            v["notice"].as_str().unwrap().contains("detail=full"),
+            "help notice must name detail=full"
+        );
     }
 }
 

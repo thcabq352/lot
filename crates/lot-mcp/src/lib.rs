@@ -68,7 +68,7 @@ fn agent_prop() -> Value {
 }
 
 fn tools() -> Value {
-    json!([
+    let mut list = json!([
         {
             "name": "lot_status",
             "description": "First call. Kernel + current show. No GUI.",
@@ -647,7 +647,52 @@ fn tools() -> Value {
             "description": "Probe ffmpeg, Comfy, Grok, Ollama (LLM + vision), VO TTS, soundtrack, prompt server, Motion Previs, Blockout, upscale.",
             "inputSchema": { "type": "object", "properties": {} }
         }
-    ])
+    ]);
+    decorate_mutating_tools(&mut list);
+    list
+}
+
+fn decorate_mutating_tools(list: &mut Value) {
+    let Some(arr) = list.as_array_mut() else {
+        return;
+    };
+    let skip = ["lot_status", "lot_help", "lot_doctor"];
+    let output_schema = json!({
+        "type": "object",
+        "properties": {
+            "ok": { "type": "boolean" },
+            "show": { "type": "string" },
+            "show_id": { "type": "string" },
+            "rev": { "type": "integer" },
+            "event_id": { "type": ["string", "null"] },
+            "who": { "type": "string" },
+            "school": {
+                "type": "object",
+                "properties": { "enabled": { "type": "boolean" } }
+            }
+        },
+        "required": ["ok", "show", "show_id", "rev", "who", "school"]
+    });
+    let detail_prop = json!({
+        "type": "string",
+        "description": "full dumps shot prompts and cards. Default is lean (ids, counts, media path+sha256+duration)."
+    });
+    for t in arr {
+        let name = t.get("name").and_then(|n| n.as_str()).unwrap_or("");
+        if skip.contains(&name) {
+            continue;
+        }
+        if let Some(obj) = t.as_object_mut() {
+            obj.insert("outputSchema".into(), output_schema.clone());
+            if let Some(props) = obj
+                .get_mut("inputSchema")
+                .and_then(|s| s.get_mut("properties"))
+                .and_then(|p| p.as_object_mut())
+            {
+                props.insert("detail".into(), detail_prop.clone());
+            }
+        }
+    }
 }
 
 fn call(params: Option<&Value>) -> Value {
@@ -667,8 +712,11 @@ fn call(params: Option<&Value>) -> Value {
         .get("agent")
         .and_then(|v| v.as_str())
         .map(|s| s.to_string());
+    let full = lot_core::detail_full_value(args.get("detail"));
     lot_core::with_caps(caps, || {
-        lot_core::with_agent(agent, || dispatch(name, &args))
+        lot_core::with_agent(agent, || {
+            lot_core::with_detail(full, || dispatch(name, &args))
+        })
     })
 }
 
@@ -1346,7 +1394,8 @@ fn mut_ok(dir: &Path, show: &lot_core::Show, extra: Value) -> Value {
 
 fn tool_ok(v: &Value) -> Value {
     json!({
-        "content": [{ "type": "text", "text": v.to_string() }]
+        "content": [{ "type": "text", "text": v.to_string() }],
+        "structuredContent": v
     })
 }
 
@@ -1576,5 +1625,108 @@ mod tests {
         );
         assert_mutation_envelope(&listed);
         assert!(listed["revs"].as_array().is_some(), "{listed}");
+    }
+
+    #[test]
+    fn tools_advertise_output_schema_and_detail() {
+        let r = handle(&json!({"jsonrpc":"2.0","id":2,"method":"tools/list"})).unwrap();
+        let tools = r["result"]["tools"].as_array().unwrap();
+        let stage = tools
+            .iter()
+            .find(|t| t["name"] == "lot_stage_place")
+            .unwrap();
+        assert_eq!(
+            stage["outputSchema"]["properties"]["show_id"]["type"],
+            "string"
+        );
+        assert!(stage["inputSchema"]["properties"].get("detail").is_some());
+        let status = tools.iter().find(|t| t["name"] == "lot_status").unwrap();
+        assert!(status.get("outputSchema").is_none());
+    }
+
+    #[test]
+    fn mutating_tools_are_lean_unless_detail_full() {
+        let root = std::env::temp_dir().join(format!(
+            "lot-mcp-lean-{}-{}",
+            std::process::id(),
+            std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .map(|d| d.as_nanos())
+                .unwrap_or(0)
+        ));
+        let _ = std::fs::remove_dir_all(&root);
+        std::fs::create_dir_all(&root).unwrap();
+        std::env::set_var("LOT_HOME", root.join("home"));
+        std::env::remove_var("LOT_SHOW");
+        lot_core::clear_caps();
+        lot_core::clear_agent();
+
+        let show_dir = root.join("show");
+        call_body(
+            "lot_create",
+            json!({ "path": show_dir.display().to_string(), "name": "Lean" }),
+        );
+        let script = root.join("script.txt");
+        std::fs::write(
+            &script,
+            "INT. TENT - NIGHT\n\nADA (quietly)\nDon't put it on.\n",
+        )
+        .unwrap();
+        call_body(
+            "lot_breakdown_import",
+            json!({
+                "path": show_dir.display().to_string(),
+                "file": script.display().to_string()
+            }),
+        );
+        call_body(
+            "lot_slate_set",
+            json!({
+                "path": show_dir.display().to_string(),
+                "shot": "01",
+                "prompt": "wide tent, neon rain, keep this prompt off the default payload"
+            }),
+        );
+        let placed = call_body(
+            "lot_stage_place",
+            json!({
+                "path": show_dir.display().to_string(),
+                "shot": "01",
+                "who": "Ada",
+                "mark": "by the trunk",
+                "x": "2",
+                "z": "4"
+            }),
+        );
+        assert_mutation_envelope(&placed);
+        let shot = &placed["shots"][0];
+        assert_eq!(shot["num"], "01");
+        assert!(shot.get("prompt").is_none(), "lean dump {placed}");
+        assert!(shot.get("prompt_targets").is_none(), "lean dump {placed}");
+        assert_eq!(shot["marks"], 1);
+
+        let full = call_body(
+            "lot_stage_place",
+            json!({
+                "path": show_dir.display().to_string(),
+                "shot": "01",
+                "who": "Ada",
+                "mark": "by the trunk",
+                "detail": "full"
+            }),
+        );
+        assert_eq!(
+            full["shots"][0]["prompt"],
+            "wide tent, neon rain, keep this prompt off the default payload"
+        );
+        let raw = handle(&json!({
+            "jsonrpc":"2.0","id":11,"method":"tools/call",
+            "params":{"name":"lot_writer_brief","arguments":{
+                "path": show_dir.display().to_string(),
+                "text": "A woman waits."
+            }}
+        }))
+        .unwrap();
+        assert_eq!(raw["result"]["structuredContent"]["ok"], true);
     }
 }
