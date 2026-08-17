@@ -11,6 +11,8 @@ pub struct Doctor {
     pub comfy: bool,
     pub grok_configured: bool,
     pub local_configured: bool,
+    pub vo_tts: bool,
+    pub soundtrack_cmd: bool,
     pub renderer: &'static str,
 }
 
@@ -34,9 +36,18 @@ impl Doctor {
             comfy,
             grok_configured,
             local_configured,
+            vo_tts: crate::stems::vo_backend_name().is_some(),
+            soundtrack_cmd: std::env::var("LOT_SOUNDTRACK_CMD")
+                .ok()
+                .map(|s| !s.trim().is_empty())
+                .unwrap_or(false),
             renderer: if comfy { "comfy" } else { "unavailable" },
         }
     }
+}
+
+pub(crate) fn bin_on_path(name: &str) -> bool {
+    on_path(name)
 }
 
 fn on_path(name: &str) -> bool {

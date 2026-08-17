@@ -76,7 +76,7 @@ Do not put William’s name on a splash as branding unless the humans ask. Do pu
 | 6 | Board | Storyboard Reference | Stills + board export |
 | 7 | Slate | Slate | Continuity-locked prompts |
 | 8 | Dailies | Circle Take | Ingest, gate, circle, FCPXML |
-| 9 | Stems | Stem Studio | Dialogue / music / SFX |
+| 9 | Stems | Stem Studio | Dialogue / music / SFX + **soundtrack generate** + **VO generate** |
 | 10 | Cut | DaVinci MCP | Resolve live **or** FCPXML/EDL |
 | — | Lot | Call Sheet | Always-on section switcher + recents |
 | — | **School** | *(new, optional)* | Pedagogy overlay — off by default |
@@ -99,7 +99,7 @@ Paperwork PDF can stay an optional plugin. Do not block the Lot on SwiftUI.
   - **Living / working directors** (curated, dated list)
   - **All-time / canon directors** (curated, dated list)  
   Selecting a name loads a **persona pack** (coverage habits, pacing, what they refuse). It does **not** claim the living person endorsed the app. Label the UI “influence / coverage style,” not “official.”
-- **Format** — feature / 30-min / 15s / episodic.
+- **Format** — feature / 30-min / 15s / episodic / **advertisement** / **music-video**. Aliases: `ad`, `mv`. Same IDs on CLI and MCP.
 - **Tone / rating** — optional.
 - **World** — places (multi).
 - **Cast** — main characters: name, function, look-lock notes, must-not.
@@ -111,6 +111,19 @@ Paperwork PDF can stay an optional plugin. Do not block the Lot on SwiftUI.
 `writer_set_brief`, `writer_set_style`, `writer_set_cast`, `writer_draft`, `writer_revise`, `writer_lock_draft` → feeds Breakdown.
 
 Brain: **Grok via xAI / SpaceXAI OAuth is #1** for Writer (and every other language/vision task). Keep whatever OAuth Hermes already has as fallbacks. Cursor is **#1 for Lot engineering** (tests, refactors, ACP) and may be offered as a second opinion on structure — it is not the default novelist if Grok is up.
+
+---
+
+## Section 9 — Stems (soundtrack + VO)
+
+**In:** a soundtrack brief and/or VO text; optional owned audio.  
+**Out:** `stems/soundtrack-cue.md` plus optional `stems/*.wav` on the same `show.lot`.
+
+Not an 11th movie stage. Dialogue / music / SFX stay the Stem Studio job; Lot adds generate/attach here.
+
+- **Soundtrack cue** — Grok/local writes a cue sheet. If no language brain, the cue is the filmmaker brief. Never a silent fake track.
+- **Soundtrack audio** — attach `--file`, or `--generate` via `LOT_SOUNDTRACK_CMD <brief> <out.wav>`. Missing engine → `no soundtrack engine —` and **no** stub wav.
+- **VO** — attach `--file`, or `--generate` via `LOT_TTS_CMD` → piper → espeak → Windows SAPI → macOS `say`. Missing TTS → `no vo brain —`.
 
 ---
 
@@ -142,7 +155,7 @@ writer_*
 breakdown_*          # import + parse; NOT read-only
 wall_* / picture_* / stage_* / board_* / slate_*
 dailies_ingest / dailies_circle / dailies_export
-stems_run / cut_export
+stems_soundtrack / stems_vo / cut_export
 lot_handoff          # “advance phase” with a dry-run
 school_get / school_set
 ```
@@ -244,6 +257,8 @@ On boot / `lot_status`:
 | GPU VRAM | cap segment length (e.g. 5–6s segs, stitch to 15–20s) |
 | Resolve Studio | interchange FCPXML/EDL |
 | xAI OAuth / local LLM | Writer disabled or local-only |
+| VO TTS (SAPI / piper / espeak / say) | `stems vo --generate` errors `no vo brain —`; attach still works |
+| `LOT_SOUNDTRACK_CMD` | `stems soundtrack --generate` errors `no soundtrack engine —`; cue still writes |
 
 Never assume a drive letter, a 16GB card, or a portable Comfy path.
 
@@ -264,7 +279,7 @@ Replacement order (pain, not prestige):
 2. Slate + Dailies (where shows actually die)  
 3. Picture / Wall (JSON, cheap)  
 4. Board export → Slate (one button / one tool)  
-5. Stage / Motion / Stems (keep engines until the kernel is loved)
+5. Stage / Motion (keep engines). Stems soundtrack + VO are already in-kernel.
 
 Original apps remain installed. Lot never deletes a user’s `.scriptbreak` / `.ctake`.
 
@@ -296,6 +311,7 @@ Original apps remain installed. Lot never deletes a user’s `.scriptbreak` / `.
 - Prompts live in `show.lot`.
 - Ingest by **filename prefix** (`01-foo.mp4` → shot 01).
 - Circle/export FCPXML. Expected duration = actual probe until the user asks for longer takes.
+- Stems soundtrack cue + VO generate (attach / `LOT_SOUNDTRACK_CMD` / local TTS). Never a silent stub.
 
 ### Phase 4 — Shell UI
 
@@ -333,6 +349,7 @@ Original apps remain installed. Lot never deletes a user’s `.scriptbreak` / `.
 - **AC-014:** `school_score` on a fixture scene returns rubric ids + pass/fail; no GUI required.
 - **AC-015:** `lot status --json` and `lot writer draft --show <path> --json` succeed with no display and no prompt; exit 0 writes a fountain file. `lot dailies circle` without `--take` exits non-zero, does not open a GUI.
 - **AC-016 (William bar):** Shell UI shows one show, current phase, and the agent’s last event with no folder dialog on the happy path. School is a dimmer (off = no lesson chrome). Not a gray form farm. Not a segregated “special” skin.
+- **AC-017:** `lot stems soundtrack --brief "…" --json` writes `stems/soundtrack-cue.md` and no wav. `--generate` without `LOT_SOUNDTRACK_CMD` exits non-zero (`no soundtrack engine —`) and still writes no wav. `lot writer style --format ad` stores `advertisement`; `--format mv` stores `music-video`.
 
 ---
 
@@ -366,7 +383,7 @@ Not new apps. Holes that bite later if we pretend they aren’t there.
 5. **Headless/CI pack** in the Linux/Windows zip — fixtures + `lot school exam` for any box, no GPU.
 6. **Telemetry default off.** If on: counts only, no scripts, no frames, no prompts.
 7. **Auto-update channel** on the three installers. Agent can `lot version` / `lot upgrade --check`.
-8. **Captions/VO optional** (Grok or local TTS) — not a 11th movie stage; a Slate/Dailies attach.
+8. **Soundtrack + VO live on Stems** (not a 11th movie stage). Cue via Grok/local; audio via attach, `LOT_SOUNDTRACK_CMD`, or local TTS (SAPI / piper / espeak / say). Never a silent fake track.
 9. **Docs ship in the binary:** `lot help --json` is the spec. Stale website ≠ the contract.
 
 That’s enough. More wishes after a kernel exists.

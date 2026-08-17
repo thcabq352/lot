@@ -109,7 +109,7 @@ fn tools() -> Value {
                     "genre": { "description": "Genre id(s)." },
                     "living": { "description": "Living director id(s)." },
                     "canon": { "description": "Canon director id(s)." },
-                    "format": { "type": "string", "description": "feature | 30min | 15s | episodic" },
+                    "format": { "type": "string", "description": "feature | 30min | 15s | episodic | advertisement | music-video" },
                     "path": path_prop()
                 }
             }
@@ -265,8 +265,34 @@ fn tools() -> Value {
             }
         },
         {
+            "name": "lot_stems_soundtrack",
+            "description": "Write a soundtrack cue (Grok/local if up). Attach --file or LOT_SOUNDTRACK_CMD to generate audio. Never a fake track.",
+            "inputSchema": {
+                "type": "object",
+                "properties": {
+                    "brief": { "type": "string" },
+                    "file": { "type": "string" },
+                    "generate": { "type": "boolean" },
+                    "path": path_prop()
+                }
+            }
+        },
+        {
+            "name": "lot_stems_vo",
+            "description": "Voiceover: set text, attach a file, or generate via local TTS (SAPI / piper / espeak / say).",
+            "inputSchema": {
+                "type": "object",
+                "properties": {
+                    "text": { "type": "string" },
+                    "file": { "type": "string" },
+                    "generate": { "type": "boolean" },
+                    "path": path_prop()
+                }
+            }
+        },
+        {
             "name": "lot_doctor",
-            "description": "Probe ffmpeg, Comfy :8188, and whether Grok/local brains are configured.",
+            "description": "Probe ffmpeg, Comfy :8188, Grok/local, VO TTS, and LOT_SOUNDTRACK_CMD.",
             "inputSchema": { "type": "object", "properties": {} }
         }
     ])
@@ -552,6 +578,40 @@ fn call(params: Option<&Value>) -> Value {
                 Err(e) => tool_err(&e.to_string()),
             })
         }
+        "lot_stems_soundtrack" => with_path(&args, || {
+            let brief = args.get("brief").and_then(|v| v.as_str());
+            let file = args.get("file").and_then(|v| v.as_str()).map(Path::new);
+            let generate = args
+                .get("generate")
+                .and_then(|v| v.as_bool())
+                .unwrap_or(false);
+            match lot_core::stems_soundtrack(brief, file, generate) {
+                Ok((dir, show)) => tool_ok(&json!({
+                    "ok": true,
+                    "show": dir.display().to_string(),
+                    "rev": show.rev,
+                    "stems": show.stems,
+                })),
+                Err(e) => tool_err(&e.to_string()),
+            }
+        }),
+        "lot_stems_vo" => with_path(&args, || {
+            let text = args.get("text").and_then(|v| v.as_str());
+            let file = args.get("file").and_then(|v| v.as_str()).map(Path::new);
+            let generate = args
+                .get("generate")
+                .and_then(|v| v.as_bool())
+                .unwrap_or(false);
+            match lot_core::stems_vo(text, file, generate) {
+                Ok((dir, show)) => tool_ok(&json!({
+                    "ok": true,
+                    "show": dir.display().to_string(),
+                    "rev": show.rev,
+                    "stems": show.stems,
+                })),
+                Err(e) => tool_err(&e.to_string()),
+            }
+        }),
         "lot_doctor" => {
             let d = lot_core::Doctor::probe();
             match serde_json::to_value(&d) {
@@ -675,6 +735,8 @@ mod tests {
             "lot_dailies_ingest",
             "lot_dailies_circle",
             "lot_dailies_export",
+            "lot_stems_soundtrack",
+            "lot_stems_vo",
             "lot_doctor",
         ] {
             assert!(names.contains(&n), "missing {n} in {names:?}");

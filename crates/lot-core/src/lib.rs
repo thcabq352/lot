@@ -13,6 +13,7 @@ mod model;
 mod packs;
 mod parse;
 mod show;
+mod stems;
 
 pub use brain::{
     complete_chat, draft_fountain, draft_user_prompt, revise_fountain, Completion, Provenance,
@@ -27,6 +28,7 @@ pub use show::{
     set_current_show, set_style, unlock_writer, upsert_cast, CastMember, Show, ShowError, Writer,
     SCREENPLAY_FILE,
 };
+pub use stems::{stems_soundtrack, stems_vo, Stems};
 
 /// Kernel status — CLI `--json` and MCP `lot_status` share this shape.
 #[derive(Debug, Serialize)]

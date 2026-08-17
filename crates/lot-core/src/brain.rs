@@ -60,7 +60,16 @@ pub fn draft_user_prompt(show: &Show) -> String {
     let mut out = String::new();
     out.push_str(&format!("Show title: {}\n\n", show.name));
     match show.writer.format.as_deref() {
-        Some(f) if !f.is_empty() => out.push_str(&format!("Format: {f}\n")),
+        Some(f) if !f.is_empty() => {
+            out.push_str(&format!("Format: {f}\n"));
+            if let Some(notes) = lookup(packs::formats(), f)
+                .and_then(|it| it.notes.as_deref())
+                .map(str::trim)
+                .filter(|s| !s.is_empty())
+            {
+                out.push_str(&format!("Format notes: {notes}\n"));
+            }
+        }
         _ => out.push_str("Format: unset\n"),
     }
     if show.writer.genres.is_empty() {
@@ -559,6 +568,7 @@ mod tests {
             takes: vec![],
             media: vec![],
             wall: vec![],
+            stems: crate::stems::Stems::default(),
             writer: Writer {
                 brief: "A clown loses the mask.".into(),
                 genres: vec!["drama".into()],
@@ -594,6 +604,14 @@ mod tests {
         assert!(
             p.to_lowercase().contains("coverage") || p.to_lowercase().contains("influence"),
             "{p}"
+        );
+        let mut ad = show.clone();
+        ad.writer.format = Some("advertisement".into());
+        let ad_p = draft_user_prompt(&ad);
+        assert!(ad_p.contains("advertisement"), "{ad_p}");
+        assert!(
+            ad_p.to_lowercase().contains("spot") || ad_p.to_lowercase().contains("commercial"),
+            "{ad_p}"
         );
     }
 

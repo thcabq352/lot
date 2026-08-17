@@ -2,8 +2,8 @@ use clap::{Parser, Subcommand};
 use lot_core::{
     breakdown_parse, breakdown_summary, create_show, dailies_circle, dailies_export,
     dailies_ingest, draft_screenplay, lock_writer, open_show, picture_lock, replace_cast_json,
-    revise_screenplay, set_brief, set_style, slate_set, unlock_writer, upsert_cast, wall_add,
-    Doctor, Status,
+    revise_screenplay, set_brief, set_style, slate_set, stems_soundtrack, stems_vo, unlock_writer,
+    upsert_cast, wall_add, Doctor, Status,
 };
 use std::path::{Path, PathBuf};
 use std::process::ExitCode;
@@ -65,6 +65,11 @@ enum Cmd {
     Dailies {
         #[command(subcommand)]
         cmd: DailiesCmd,
+    },
+    /// Stems: soundtrack + VO (generate or attach). Not a new movie stage.
+    Stems {
+        #[command(subcommand)]
+        cmd: StemsCmd,
     },
     /// Cut: interchange export (FCPXML). Resolve live is an adapter later.
     Cut {
@@ -187,6 +192,28 @@ enum CutCmd {
     Export,
 }
 
+#[derive(Subcommand)]
+enum StemsCmd {
+    /// Write a soundtrack cue (and optional audio). Never a fake track.
+    Soundtrack {
+        #[arg(long)]
+        brief: Option<String>,
+        #[arg(long)]
+        file: Option<PathBuf>,
+        #[arg(long, default_value_t = false)]
+        generate: bool,
+    },
+    /// Voiceover: set text, attach a file, or --generate via local TTS.
+    Vo {
+        #[arg(long)]
+        text: Option<String>,
+        #[arg(long)]
+        file: Option<PathBuf>,
+        #[arg(long, default_value_t = false)]
+        generate: bool,
+    },
+}
+
 fn main() -> ExitCode {
     let cli = Cli::parse();
     match cli.cmd.unwrap_or(Cmd::Status) {
@@ -307,6 +334,12 @@ fn main() -> ExitCode {
             }
             dailies_cmd(cmd, cli.json)
         }
+        Cmd::Stems { cmd } => {
+            if let Some(code) = apply_show(cli.show.as_deref(), cli.json) {
+                return code;
+            }
+            stems_cmd(cmd, cli.json)
+        }
         Cmd::Cut { cmd } => {
             if let Some(code) = apply_show(cli.show.as_deref(), cli.json) {
                 return code;
@@ -330,8 +363,15 @@ fn main() -> ExitCode {
                 println!("{}", serde_json::to_string(&d).expect("doctor json"));
             } else {
                 println!(
-                    "ffmpeg={} ffprobe={} comfy={} grok={} local={} renderer={}",
-                    d.ffmpeg, d.ffprobe, d.comfy, d.grok_configured, d.local_configured, d.renderer
+                    "ffmpeg={} ffprobe={} comfy={} grok={} local={} vo_tts={} soundtrack_cmd={} renderer={}",
+                    d.ffmpeg,
+                    d.ffprobe,
+                    d.comfy,
+                    d.grok_configured,
+                    d.local_configured,
+                    d.vo_tts,
+                    d.soundtrack_cmd,
+                    d.renderer
                 );
             }
             ExitCode::SUCCESS
@@ -420,6 +460,41 @@ fn dailies_cmd(cmd: DailiesCmd, json: bool) -> ExitCode {
                 &show,
                 serde_json::json!({ "export": file.display().to_string() }),
                 &format!("exported {}", file.display()),
+            ),
+            Err(e) => fail(json, &e.to_string()),
+        },
+    }
+}
+
+fn stems_cmd(cmd: StemsCmd, json: bool) -> ExitCode {
+    match cmd {
+        StemsCmd::Soundtrack {
+            brief,
+            file,
+            generate,
+        } => match stems_soundtrack(brief.as_deref(), file.as_deref(), generate) {
+            Ok((dir, show)) => ok_writer(
+                json,
+                &dir,
+                &show,
+                serde_json::json!({
+                    "stems": show.stems,
+                }),
+                "soundtrack cue written",
+            ),
+            Err(e) => fail(json, &e.to_string()),
+        },
+        StemsCmd::Vo {
+            text,
+            file,
+            generate,
+        } => match stems_vo(text.as_deref(), file.as_deref(), generate) {
+            Ok((dir, show)) => ok_writer(
+                json,
+                &dir,
+                &show,
+                serde_json::json!({ "stems": show.stems }),
+                "vo set",
             ),
             Err(e) => fail(json, &e.to_string()),
         },

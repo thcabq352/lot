@@ -25,6 +25,7 @@ Optional `--show <path>` (CLI global) or MCP `path` opens that show, then runs. 
 - `lot_breakdown_import`, `lot_breakdown_parse`
 - `lot_wall_add`, `lot_picture_lock`, `lot_slate_set`
 - `lot_dailies_ingest`, `lot_dailies_circle`, `lot_dailies_export`, `lot_cut_export`
+- `lot_stems_soundtrack`, `lot_stems_vo`
 
 Hermes:
 
@@ -40,7 +41,8 @@ No TTY prompts. Flags only. Exit 0 = ok. A show is a directory with `show.json` 
 
 ```
 lot writer brief --text "…"
-lot writer style --genre drama --living greta-gerwig --canon akira-kurosawa --format 30min
+lot writer style --genre drama --living greta-gerwig --canon akira-kurosawa --format advertisement
+# formats: feature | 30min | 15s | episodic | advertisement | music-video  (aliases: ad, mv)
 lot writer cast --name Ada --function lead
 lot writer draft --json
 lot writer revise --notes "…"
@@ -69,9 +71,21 @@ lot dailies export --json
 
 `01-foo.mp4` binds to shot `01` and **does not** rename the shot to `"01"`. Circle without `--take` exits non-zero (no GUI).
 
+## Stems (soundtrack + VO)
+
+```
+lot stems soundtrack --brief "bright organ, no lyrics" --json
+lot stems soundtrack --file score.wav --json
+lot stems soundtrack --brief "…" --generate --json   # needs LOT_SOUNDTRACK_CMD; never a fake wav
+lot stems vo --text "Don't put it on." --generate --json   # Windows SAPI / piper / espeak / say
+lot stems vo --file vo.wav --json
+```
+
+No soundtrack engine → `no soundtrack engine —` and **no** silent stub. No TTS → `no vo brain —`.
+
 ## Stack
 
-- `crates/lot-core` — schema, Writer, Breakdown, Dailies, doctor
+- `crates/lot-core` — schema, Writer, Breakdown, Dailies, Stems, doctor
 - `crates/lot-cli` — binary `lot`
 - `crates/lot-mcp` — stdio MCP (`lot mcp`)
 

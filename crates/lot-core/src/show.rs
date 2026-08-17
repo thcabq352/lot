@@ -72,6 +72,8 @@ pub struct Show {
     pub wall: Vec<Beat>,
     #[serde(default)]
     pub writer: Writer,
+    #[serde(default)]
+    pub stems: crate::stems::Stems,
 }
 
 #[derive(Debug, Clone, Default, Serialize, Deserialize)]
@@ -126,6 +128,7 @@ impl Show {
             media: Vec::new(),
             wall: Vec::new(),
             writer: Writer::default(),
+            stems: crate::stems::Stems::default(),
         }
     }
 }
@@ -712,6 +715,53 @@ mod tests {
         assert!(xml.is_file());
         let body = fs::read_to_string(&xml).unwrap();
         assert!(body.contains("fcpxml"));
+    }
+
+    #[test]
+    fn advertisement_and_music_video_formats() {
+        let _g = ENV.lock().unwrap_or_else(|e| e.into_inner());
+        let (dir, _) = setup_show("Ad");
+        set_style(None, None, None, Some("ad")).unwrap();
+        assert_eq!(
+            read_show(&dir).unwrap().writer.format.as_deref(),
+            Some("advertisement")
+        );
+        set_style(None, None, None, Some("mv")).unwrap();
+        assert_eq!(
+            read_show(&dir).unwrap().writer.format.as_deref(),
+            Some("music-video")
+        );
+    }
+
+    #[test]
+    fn soundtrack_cue_no_fake_audio() {
+        let _g = ENV.lock().unwrap_or_else(|e| e.into_inner());
+        let (dir, _) = setup_show("Score");
+        isolate_brain();
+        std::env::remove_var("LOT_SOUNDTRACK_CMD");
+        crate::stems_soundtrack(Some("bright carnival organ, no lyrics"), None, false).unwrap();
+        let show = read_show(&dir).unwrap();
+        assert!(!show.stems.soundtrack_brief.is_empty());
+        assert!(show.stems.soundtrack_path.is_none());
+        let cue = dir.join("stems").join("soundtrack-cue.md");
+        assert!(cue.is_file());
+        let err = crate::stems_soundtrack(None, None, true)
+            .unwrap_err()
+            .to_string();
+        assert!(err.contains("no soundtrack engine"), "{err}");
+        assert!(!dir.join("stems").join("soundtrack.wav").exists());
+        std::env::remove_var("HERMES_HOME");
+        std::env::remove_var("LOT_HERMES_HOME");
+        std::env::remove_var("LOT_LOCAL_BASE_URL");
+        std::env::remove_var("LOT_LOCAL_MODEL");
+    }
+
+    #[test]
+    fn vo_needs_text() {
+        let _g = ENV.lock().unwrap_or_else(|e| e.into_inner());
+        setup_show("VO");
+        let err = crate::stems_vo(None, None, false).unwrap_err().to_string();
+        assert!(err.contains("vo"), "{err}");
     }
 
     #[test]

@@ -7,8 +7,16 @@ use std::sync::OnceLock;
 const GENRES_JSON: &str = include_str!("../packs/genres.json");
 const LIVING_JSON: &str = include_str!("../packs/directors-living.json");
 const CANON_JSON: &str = include_str!("../packs/directors-canon.json");
+const FORMATS_JSON: &str = include_str!("../packs/formats.json");
 
-pub const FORMATS: &[&str] = &["feature", "30min", "15s", "episodic"];
+pub const FORMATS: &[&str] = &[
+    "feature",
+    "30min",
+    "15s",
+    "episodic",
+    "advertisement",
+    "music-video",
+];
 
 #[derive(Debug, Clone, Copy)]
 pub enum IdKind {
@@ -77,6 +85,11 @@ pub fn canon_directors() -> &'static PackFile {
     P.get_or_init(|| parse_pack(CANON_JSON, "directors-canon"))
 }
 
+pub fn formats() -> &'static PackFile {
+    static P: OnceLock<PackFile> = OnceLock::new();
+    P.get_or_init(|| parse_pack(FORMATS_JSON, "formats"))
+}
+
 fn parse_pack(raw: &str, name: &str) -> PackFile {
     let pack: PackFile = serde_json::from_str(raw).unwrap_or_else(|e| panic!("{name} pack: {e}"));
     if pack.reviewed.trim().is_empty() {
@@ -110,15 +123,29 @@ pub fn resolve_ids(kind: IdKind, ids: &[String]) -> Result<Vec<String>, ShowErro
 
 pub fn resolve_format(raw: &str) -> Result<String, ShowError> {
     let raw = raw.trim();
-    FORMATS
+    let key = raw.to_ascii_lowercase().replace('_', "-");
+    let canonical = match key.as_str() {
+        "ad" | "advert" | "advertisement" | "commercial" | "spot" => "advertisement",
+        "mv" | "music-video" | "musicvideo" | "music video" => "music-video",
+        other => other,
+    };
+    if formats()
+        .items
         .iter()
-        .find(|f| f.eq_ignore_ascii_case(raw))
-        .map(|f| (*f).to_string())
-        .ok_or_else(|| {
-            ShowError::Msg(format!(
-                "unknown format: {raw} (want feature | 30min | 15s | episodic)"
-            ))
-        })
+        .any(|it| it.id.eq_ignore_ascii_case(canonical))
+        || FORMATS.iter().any(|f| f.eq_ignore_ascii_case(canonical))
+    {
+        let id = formats()
+            .items
+            .iter()
+            .find(|it| it.id.eq_ignore_ascii_case(canonical))
+            .map(|it| it.id.clone())
+            .unwrap_or_else(|| canonical.to_string());
+        return Ok(id);
+    }
+    Err(ShowError::Msg(format!(
+        "unknown format: {raw} (want feature | 30min | 15s | episodic | advertisement | music-video)"
+    )))
 }
 
 pub fn lookup<'a>(pack: &'a PackFile, id: &str) -> Option<&'a PackItem> {
@@ -148,6 +175,7 @@ mod tests {
             ("genres", genres()),
             ("living", living_directors()),
             ("canon", canon_directors()),
+            ("formats", formats()),
         ] {
             assert!(!pack.reviewed.is_empty(), "{name} missing reviewed");
             assert!(
@@ -179,6 +207,12 @@ mod tests {
     #[test]
     fn format_ids() {
         assert_eq!(resolve_format("30Min").unwrap(), "30min");
+        assert_eq!(resolve_format("ad").unwrap(), "advertisement");
+        assert_eq!(resolve_format("commercial").unwrap(), "advertisement");
+        assert_eq!(resolve_format("spot").unwrap(), "advertisement");
+        assert_eq!(resolve_format("music-video").unwrap(), "music-video");
+        assert_eq!(resolve_format("mv").unwrap(), "music-video");
+        assert_eq!(resolve_format("musicvideo").unwrap(), "music-video");
         assert!(resolve_format("webisode")
             .unwrap_err()
             .to_string()

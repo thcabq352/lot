@@ -1,0 +1,12 @@
+{
+  "reviewed": "2026-08-17",
+  "disclaimer": "Delivery formats for Writer and Stems. Not a claim of any network or brand standard.",
+  "items": [
+    { "id": "feature", "label": "Feature" },
+    { "id": "30min", "label": "30-minute" },
+    { "id": "15s", "label": "15-second", "notes": "One 15-second piece. No act structure." },
+    { "id": "episodic", "label": "Episodic" },
+    { "id": "advertisement", "label": "Advertisement", "notes": "Short commercial spot. Product or idea in the first beat. One location if possible. Under ~60s of screen time. Aliases: ad, advert, commercial, spot." },
+    { "id": "music-video", "label": "Music video", "notes": "Picture to a track. Performance plus narrative cuts. Do not invent lyrics unless the brief includes them. Alias: mv." }
+  ]
+}
