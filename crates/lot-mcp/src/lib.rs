@@ -1640,7 +1640,7 @@ mod tests {
         assert_cli_envelope(&locked);
         assert_eq!(locked["locked"], true);
 
-        let script = tmp().join("tent.fountain");
+        let script = dir.join("tent.fountain");
         std::fs::write(&script, "INT. TENT - NIGHT\n\nADA\nDon't put it on.\n").unwrap();
         let imported = call_body(
             "lot_breakdown_import",
