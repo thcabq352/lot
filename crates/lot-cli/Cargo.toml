@@ -11,5 +11,6 @@ path = "src/main.rs"
 
 [dependencies]
 lot-core = { workspace = true }
+lot-mcp = { path = "../lot-mcp" }
 clap = { workspace = true }
 serde_json = { workspace = true }

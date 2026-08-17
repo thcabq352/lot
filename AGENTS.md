@@ -12,6 +12,13 @@ You are an agent in the shop. Humans confirm. You do not click folder dialogs.
 lot status --json
 lot create <dir> --name "Title" --json
 lot open <dir> --json
+lot mcp
+```
+
+`lot mcp` is NDJSON JSON-RPC 2.0 on stdin/stdout (same as the suite). Tools: `lot_status`, `lot_create`, `lot_open`. Hermes:
+
+```json
+{ "command": "C:/Users/thcab/lot/target/debug/lot.exe", "args": ["mcp"] }
 ```
 
 No TTY prompts. Flags only. Exit 0 = ok. A show is a directory with `show.json` + `events.jsonl` + `media/`.

@@ -76,10 +76,13 @@ fn main() -> ExitCode {
             }
             Err(e) => fail(cli.json, &e.to_string()),
         },
-        Cmd::Mcp => {
-            eprintln!("lot mcp: stdio server not wired (kernel only).");
-            ExitCode::from(2)
-        }
+        Cmd::Mcp => match lot_mcp::run_stdio() {
+            Ok(()) => ExitCode::SUCCESS,
+            Err(e) => {
+                eprintln!("lot mcp: {e}");
+                ExitCode::from(1)
+            }
+        },
     }
 }
 

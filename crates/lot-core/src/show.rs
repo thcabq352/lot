@@ -214,8 +214,10 @@ fn new_id() -> String {
 mod tests {
     use super::*;
     use std::sync::atomic::{AtomicU64, Ordering};
+    use std::sync::Mutex;
 
     static N: AtomicU64 = AtomicU64::new(0);
+    static ENV: Mutex<()> = Mutex::new(());
 
     fn tmp() -> PathBuf {
         let n = N.fetch_add(1, Ordering::SeqCst);
@@ -226,6 +228,7 @@ mod tests {
 
     #[test]
     fn create_then_read() {
+        let _g = ENV.lock().unwrap();
         let dir = tmp();
         let home = tmp().join("home");
         std::env::set_var("LOT_HOME", &home);
@@ -242,6 +245,7 @@ mod tests {
 
     #[test]
     fn refuse_second_create() {
+        let _g = ENV.lock().unwrap();
         let dir = tmp();
         std::env::set_var("LOT_HOME", tmp().join("home2"));
         create_show(&dir, Some("A")).unwrap();
