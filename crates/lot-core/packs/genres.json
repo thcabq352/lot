@@ -1,0 +1,28 @@
+{
+  "reviewed": "2026-08-17",
+  "disclaimer": "Coverage taxonomy for Writer. Not a claim of completeness or of any guild standard.",
+  "items": [
+    { "id": "drama", "label": "Drama" },
+    { "id": "dark-comedy", "label": "Dark comedy" },
+    { "id": "comedy", "label": "Comedy" },
+    { "id": "thriller", "label": "Thriller" },
+    { "id": "western", "label": "Western" },
+    { "id": "horror", "label": "Horror" },
+    { "id": "romance", "label": "Romance" },
+    { "id": "science-fiction", "label": "Science fiction" },
+    { "id": "fantasy", "label": "Fantasy" },
+    { "id": "crime", "label": "Crime" },
+    { "id": "mystery", "label": "Mystery" },
+    { "id": "action", "label": "Action" },
+    { "id": "adventure", "label": "Adventure" },
+    { "id": "war", "label": "War" },
+    { "id": "historical", "label": "Historical" },
+    { "id": "documentary", "label": "Documentary" },
+    { "id": "musical", "label": "Musical" },
+    { "id": "animation", "label": "Animation" },
+    { "id": "noir", "label": "Noir" },
+    { "id": "coming-of-age", "label": "Coming of age" },
+    { "id": "satire", "label": "Satire" },
+    { "id": "family", "label": "Family" }
+  ]
+}

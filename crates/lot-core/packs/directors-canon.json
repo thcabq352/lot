@@ -1,0 +1,116 @@
+{
+  "reviewed": "2026-08-17",
+  "disclaimer": "Influence / coverage style only. Historical canon list, dated. Not an endorsement and not a closed canon.",
+  "items": [
+    {
+      "id": "akira-kurosawa",
+      "name": "Akira Kurosawa",
+      "notes": "Weather as drama; axial multi-cam; wipe time; refuses a hero without a group."
+    },
+    {
+      "id": "yasujiro-ozu",
+      "name": "Yasujirō Ozu",
+      "notes": "Tatami-height stillness; pillow shots; family geometry; refuses dramatic camera opera."
+    },
+    {
+      "id": "kenji-mizoguchi",
+      "name": "Kenji Mizoguchi",
+      "notes": "Long-take social space; women against systems; crane as ethics; refuses easy rescue."
+    },
+    {
+      "id": "satyajit-ray",
+      "name": "Satyajit Ray",
+      "notes": "Humanist duration; location sound; child-to-adult time; refuses exotic postcard India."
+    },
+    {
+      "id": "ingmar-bergman",
+      "name": "Ingmar Bergman",
+      "notes": "Face as battlefield; chamber blocking; silence after the question; refuses spectacle cover."
+    },
+    {
+      "id": "andrei-tarkovsky",
+      "name": "Andrei Tarkovsky",
+      "notes": "Sculpted duration; elemental image (water, fire); dream logic; refuses plot hurry."
+    },
+    {
+      "id": "sergei-eisenstein",
+      "name": "Sergei Eisenstein",
+      "notes": "Collision montage; graphic match as argument; mass as character; refuses invisible continuity as the only grammar."
+    },
+    {
+      "id": "alfred-hitchcock",
+      "name": "Alfred Hitchcock",
+      "notes": "Point-of-view suspense; object close-ups; audience as accomplice; refuses explaining the bomb."
+    },
+    {
+      "id": "orson-welles",
+      "name": "Orson Welles",
+      "notes": "Deep-focus rooms; ceiling and angle; long-take bravura; refuses flat coverage."
+    },
+    {
+      "id": "john-ford",
+      "name": "John Ford",
+      "notes": "Monument landscape; doorway frames; ritual community; refuses cynicism without a hymn."
+    },
+    {
+      "id": "howard-hawks",
+      "name": "Howard Hawks",
+      "notes": "Overlapping talk; professional groups; competent women; refuses a lone tortured genius as default."
+    },
+    {
+      "id": "billy-wilder",
+      "name": "Billy Wilder",
+      "notes": "Acid structure; voiceover with teeth; moral trap; refuses a scene that does not turn."
+    },
+    {
+      "id": "stanley-kubrick",
+      "name": "Stanley Kubrick",
+      "notes": "Symmetric dread; steadicam processions; satire in the wide; refuses handheld confession."
+    },
+    {
+      "id": "federico-fellini",
+      "name": "Federico Fellini",
+      "notes": "Circus memory; parade blocking; autobiography as carnival; refuses tight naturalism."
+    },
+    {
+      "id": "agnes-varda",
+      "name": "Agnès Varda",
+      "notes": "Essay-eye; street collect; playful form; refuses a male-only gaze as default."
+    },
+    {
+      "id": "jean-luc-godard",
+      "name": "Jean-Luc Godard",
+      "notes": "Jump-cut argument; text on image; break the fourth; refuses well-made-play polish."
+    },
+    {
+      "id": "francois-truffaut",
+      "name": "François Truffaut",
+      "notes": "Intimate tracking; childhood as plot; cinephile warmth; refuses cold thesis-only scenes."
+    },
+    {
+      "id": "ida-lupino",
+      "name": "Ida Lupino",
+      "notes": "Social-problem night; economy of setups; women under pressure; refuses studio glamour as the point."
+    },
+    {
+      "id": "oscar-micheaux",
+      "name": "Oscar Micheaux",
+      "notes": "Race-film urgency; independent means; community address; refuses Hollywood as the only stage."
+    },
+    {
+      "id": "ousmane-sembene",
+      "name": "Ousmane Sembène",
+      "notes": "Fable clarity; colonial leftover as set; chorus of town; refuses savior outsiders."
+    },
+    {
+      "id": "chantal-akerman",
+      "name": "Chantal Akerman",
+      "notes": "Domestic duration; frontal rooms; labor as cinema; refuses motivated 'movie' blocking."
+    },
+    {
+      "id": "krzysztof-kieslowski",
+      "name": "Krzysztof Kieślowski",
+      "notes": "Color as motif; chance ethics; quiet metaphysics; refuses sermon dialogue."
+    }
+  ]
+}

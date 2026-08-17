@@ -6,12 +6,17 @@ pub const SHOW_SCHEMA: u32 = 1;
 pub const SHOW_FILE: &str = "show.json";
 
 mod brain;
+mod packs;
 mod show;
 
-pub use brain::{complete_chat, draft_fountain, Completion, Provenance};
+pub use brain::{
+    complete_chat, draft_fountain, draft_user_prompt, revise_fountain, Completion, Provenance,
+};
 pub use show::{
-    create_show, current_show_path, draft_screenplay, open_show, read_show, require_current,
-    set_brief, set_current_show, Show, ShowError, Writer,
+    create_show, current_show_path, draft_screenplay, lock_writer, open_show, read_show,
+    replace_cast, replace_cast_json, require_current, revise_screenplay, set_brief,
+    set_current_show, set_style, unlock_writer, upsert_cast, CastMember, Show, ShowError, Writer,
+    SCREENPLAY_FILE,
 };
 
 /// Kernel status — CLI `--json` and MCP `lot_status` share this shape.

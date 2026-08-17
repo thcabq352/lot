@@ -1,3 +1,4 @@
+use crate::packs::{self, IdKind};
 use crate::{SchoolStatus, SHOW_FILE, SHOW_SCHEMA};
 use serde::{Deserialize, Serialize};
 use std::fmt;
@@ -5,6 +6,8 @@ use std::fs;
 use std::io::{self, Write};
 use std::path::{Path, PathBuf};
 use std::time::{SystemTime, UNIX_EPOCH};
+
+pub const SCREENPLAY_FILE: &str = "screenplay.fountain";
 
 #[derive(Debug)]
 pub enum ShowError {
@@ -71,12 +74,31 @@ pub struct Writer {
     #[serde(default)]
     pub genres: Vec<String>,
     #[serde(default)]
+    pub styles_living: Vec<String>,
+    #[serde(default)]
+    pub styles_canon: Vec<String>,
+    #[serde(default)]
+    pub format: Option<String>,
+    #[serde(default)]
+    pub cast: Vec<CastMember>,
+    #[serde(default)]
     pub locked: bool,
     #[serde(default)]
     pub draft_path: Option<String>,
-    /// Last successful draft brain (backend/model/base_url/auth). Never a secret.
+    /// Last successful draft/revise brain (backend/model/base_url/auth). Never a secret.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub draft_provenance: Option<crate::Provenance>,
+}
+
+#[derive(Debug, Clone, Default, Serialize, Deserialize, PartialEq, Eq)]
+pub struct CastMember {
+    pub name: String,
+    #[serde(default)]
+    pub function: String,
+    #[serde(default)]
+    pub look: String,
+    #[serde(default, alias = "must-not")]
+    pub must_not: String,
 }
 
 impl Show {
@@ -156,57 +178,217 @@ pub fn require_current() -> Result<(PathBuf, Show), ShowError> {
     Ok((dir, show))
 }
 
-pub fn set_brief(text: &str) -> Result<(PathBuf, Show), ShowError> {
-    let (dir, mut show) = require_current()?;
+fn require_unlocked() -> Result<(PathBuf, Show), ShowError> {
+    let (dir, show) = require_current()?;
     if show.writer.locked {
         return Err(ShowError::Msg(
-            "writer locked — unlock before changing brief".into(),
+            "writer locked — unlock before changing the draft".into(),
         ));
     }
-    show.writer.brief = text.trim().to_string();
+    Ok((dir, show))
+}
+
+fn bump(show: &mut Show) {
     show.rev += 1;
     show.updated_at = now_rfc3339();
+}
+
+pub fn set_brief(text: &str) -> Result<(PathBuf, Show), ShowError> {
+    let (dir, mut show) = require_unlocked()?;
+    show.writer.brief = text.trim().to_string();
+    bump(&mut show);
     write_show(&dir, &show)?;
     append_event(&dir, "writer.brief", &show)?;
     Ok((dir, show))
 }
 
-pub fn draft_screenplay() -> Result<(PathBuf, Show), ShowError> {
-    let (dir, mut show) = require_current()?;
-    if show.writer.locked {
+pub fn set_style(
+    genres: Option<&[String]>,
+    living: Option<&[String]>,
+    canon: Option<&[String]>,
+    format: Option<&str>,
+) -> Result<(PathBuf, Show), ShowError> {
+    let (dir, mut show) = require_unlocked()?;
+    if genres.is_none() && living.is_none() && canon.is_none() && format.is_none() {
         return Err(ShowError::Msg(
-            "writer locked — unlock before drafting".into(),
+            "style needs --genre, --living, --canon, or --format".into(),
         ));
     }
+    let new_genres = genres
+        .map(|g| packs::resolve_ids(IdKind::Genre, g))
+        .transpose()?;
+    let new_living = living
+        .map(|g| packs::resolve_ids(IdKind::Living, g))
+        .transpose()?;
+    let new_canon = canon
+        .map(|g| packs::resolve_ids(IdKind::Canon, g))
+        .transpose()?;
+    let new_format = format.map(packs::resolve_format).transpose()?;
+    if let Some(g) = new_genres {
+        show.writer.genres = g;
+    }
+    if let Some(g) = new_living {
+        show.writer.styles_living = g;
+    }
+    if let Some(g) = new_canon {
+        show.writer.styles_canon = g;
+    }
+    if let Some(f) = new_format {
+        show.writer.format = Some(f);
+    }
+    bump(&mut show);
+    write_show(&dir, &show)?;
+    append_event(&dir, "writer.style", &show)?;
+    Ok((dir, show))
+}
+
+pub fn upsert_cast(
+    name: &str,
+    function: Option<&str>,
+    look: Option<&str>,
+    must_not: Option<&str>,
+) -> Result<(PathBuf, Show), ShowError> {
+    let (dir, mut show) = require_unlocked()?;
+    let name = name.trim();
+    if name.is_empty() {
+        return Err(ShowError::Msg("cast needs --name or --from-json".into()));
+    }
+    if let Some(existing) = show
+        .writer
+        .cast
+        .iter_mut()
+        .find(|c| c.name.eq_ignore_ascii_case(name))
+    {
+        existing.name = name.to_string();
+        if let Some(f) = function {
+            existing.function = f.trim().to_string();
+        }
+        if let Some(l) = look {
+            existing.look = l.trim().to_string();
+        }
+        if let Some(m) = must_not {
+            existing.must_not = m.trim().to_string();
+        }
+    } else {
+        show.writer.cast.push(CastMember {
+            name: name.to_string(),
+            function: function.unwrap_or("").trim().to_string(),
+            look: look.unwrap_or("").trim().to_string(),
+            must_not: must_not.unwrap_or("").trim().to_string(),
+        });
+    }
+    bump(&mut show);
+    write_show(&dir, &show)?;
+    append_event(&dir, "writer.cast", &show)?;
+    Ok((dir, show))
+}
+
+pub fn replace_cast(members: Vec<CastMember>) -> Result<(PathBuf, Show), ShowError> {
+    let (dir, mut show) = require_unlocked()?;
+    for m in &members {
+        if m.name.trim().is_empty() {
+            return Err(ShowError::Msg("cast json: each member needs name".into()));
+        }
+    }
+    show.writer.cast = members
+        .into_iter()
+        .map(|mut m| {
+            m.name = m.name.trim().to_string();
+            m.function = m.function.trim().to_string();
+            m.look = m.look.trim().to_string();
+            m.must_not = m.must_not.trim().to_string();
+            m
+        })
+        .collect();
+    bump(&mut show);
+    write_show(&dir, &show)?;
+    append_event(&dir, "writer.cast", &show)?;
+    Ok((dir, show))
+}
+
+pub fn replace_cast_json(raw: &str) -> Result<(PathBuf, Show), ShowError> {
+    let members: Vec<CastMember> = serde_json::from_str(raw)?;
+    replace_cast(members)
+}
+
+pub fn lock_writer() -> Result<(PathBuf, Show), ShowError> {
+    let (dir, mut show) = require_current()?;
+    if show.writer.locked {
+        return Ok((dir, show));
+    }
+    show.writer.locked = true;
+    bump(&mut show);
+    write_show(&dir, &show)?;
+    append_event(&dir, "writer.lock", &show)?;
+    Ok((dir, show))
+}
+
+pub fn unlock_writer() -> Result<(PathBuf, Show), ShowError> {
+    let (dir, mut show) = require_current()?;
+    if !show.writer.locked {
+        return Ok((dir, show));
+    }
+    show.writer.locked = false;
+    bump(&mut show);
+    write_show(&dir, &show)?;
+    append_event(&dir, "writer.unlock", &show)?;
+    Ok((dir, show))
+}
+
+pub fn draft_screenplay() -> Result<(PathBuf, Show), ShowError> {
+    let (dir, mut show) = require_unlocked()?;
     if show.writer.brief.trim().is_empty() {
         return Err(ShowError::Msg(
             "no brief — lot writer brief --text \"...\"".into(),
         ));
     }
     // Real brain only. No fake INT. LOT outline stub.
-    let completion = crate::brain::draft_fountain(&show.name, show.writer.brief.trim())?;
+    let completion = crate::brain::draft_fountain(&show)?;
+    write_fountain(&dir, &mut show, completion, "writer.draft")?;
+    Ok((dir, show))
+}
+
+pub fn revise_screenplay(notes: &str) -> Result<(PathBuf, Show), ShowError> {
+    let (dir, mut show) = require_unlocked()?;
+    let path = dir.join(SCREENPLAY_FILE);
+    if !path.is_file() {
+        return Err(ShowError::Msg(
+            "no draft — lot writer draft first (missing screenplay.fountain)".into(),
+        ));
+    }
+    let current = fs::read_to_string(&path)?;
+    let completion = crate::brain::revise_fountain(&show, &current, notes)?;
+    write_fountain(&dir, &mut show, completion, "writer.revise")?;
+    Ok((dir, show))
+}
+
+fn write_fountain(
+    dir: &Path,
+    show: &mut Show,
+    completion: crate::brain::Completion,
+    kind: &str,
+) -> Result<(), ShowError> {
     let mut fountain = completion.text;
     if !fountain.ends_with('\n') {
         fountain.push('\n');
     }
-    let path = dir.join("screenplay.fountain");
+    let path = dir.join(SCREENPLAY_FILE);
     fs::write(&path, &fountain)?;
     show.writer.draft_path = Some(path.display().to_string());
     show.writer.draft_provenance = Some(completion.provenance);
-    show.rev += 1;
-    show.updated_at = now_rfc3339();
-    write_show(&dir, &show)?;
+    bump(show);
+    write_show(dir, show)?;
     append_event_with(
-        &dir,
-        "writer.draft",
-        &show,
+        dir,
+        kind,
+        show,
         Some(serde_json::json!({
             "backend": show.writer.draft_provenance.as_ref().map(|p| &p.backend),
             "model": show.writer.draft_provenance.as_ref().map(|p| &p.model),
             "auth": show.writer.draft_provenance.as_ref().map(|p| &p.auth),
         })),
     )?;
-    Ok((dir, show))
+    Ok(())
 }
 
 fn write_show(dir: &Path, show: &Show) -> Result<(), ShowError> {
@@ -320,12 +502,32 @@ mod tests {
         p
     }
 
+    fn isolate_home() {
+        std::env::remove_var("LOT_SHOW");
+        std::env::set_var("LOT_HOME", tmp().join("home"));
+    }
+
+    fn setup_show(name: &str) -> (PathBuf, Show) {
+        isolate_home();
+        create_show(&tmp(), Some(name)).unwrap()
+    }
+
+    fn isolate_brain() {
+        let dead = tmp().join("no-hermes");
+        let _ = fs::create_dir_all(&dead);
+        std::env::set_var("HERMES_HOME", &dead);
+        std::env::set_var("LOT_HERMES_HOME", &dead);
+        std::env::remove_var("LOT_XAI_TOKEN");
+        std::env::remove_var("XAI_API_KEY");
+        std::env::set_var("LOT_LOCAL_BASE_URL", "http://127.0.0.1:9/v1");
+        std::env::set_var("LOT_LOCAL_MODEL", "nope");
+    }
+
     #[test]
     fn create_then_read() {
         let _g = ENV.lock().unwrap();
+        isolate_home();
         let dir = tmp();
-        let home = tmp().join("home");
-        std::env::set_var("LOT_HOME", &home);
         let (path, show) = create_show(&dir, Some("Demo")).unwrap();
         assert_eq!(show.name, "Demo");
         assert_eq!(show.schema, 1);
@@ -340,12 +542,128 @@ mod tests {
     #[test]
     fn refuse_second_create() {
         let _g = ENV.lock().unwrap();
+        isolate_home();
         let dir = tmp();
-        std::env::set_var("LOT_HOME", tmp().join("home2"));
         create_show(&dir, Some("A")).unwrap();
         assert!(matches!(
             create_show(&dir, Some("B")),
             Err(ShowError::Exists(_))
         ));
+    }
+
+    #[test]
+    fn unknown_genre_errors() {
+        let _g = ENV.lock().unwrap();
+        setup_show("G");
+        let err = set_style(Some(&["not-a-genre".into()]), None, None, None)
+            .unwrap_err()
+            .to_string();
+        assert!(err.contains("unknown genre"), "{err}");
+    }
+
+    #[test]
+    fn style_and_cast_persist() {
+        let _g = ENV.lock().unwrap();
+        let (dir, _) = setup_show("Style");
+        set_style(
+            Some(&["drama".into(), "thriller".into()]),
+            Some(&["greta-gerwig".into()]),
+            Some(&["akira-kurosawa".into()]),
+            Some("30min"),
+        )
+        .unwrap();
+        upsert_cast(
+            "Ada",
+            Some("lead"),
+            Some("bare face"),
+            Some("franchise cameo"),
+        )
+        .unwrap();
+        let show = read_show(&dir).unwrap();
+        assert_eq!(show.writer.genres, vec!["drama", "thriller"]);
+        assert_eq!(show.writer.styles_living, vec!["greta-gerwig"]);
+        assert_eq!(show.writer.styles_canon, vec!["akira-kurosawa"]);
+        assert_eq!(show.writer.format.as_deref(), Some("30min"));
+        assert_eq!(show.writer.cast.len(), 1);
+        assert_eq!(show.writer.cast[0].name, "Ada");
+        assert_eq!(show.writer.cast[0].function, "lead");
+        assert_eq!(show.writer.cast[0].look, "bare face");
+        assert_eq!(show.writer.cast[0].must_not, "franchise cameo");
+    }
+
+    #[test]
+    fn lock_blocks_then_unlock_restores() {
+        let _g = ENV.lock().unwrap();
+        setup_show("Lock");
+        set_brief("a clown at the gate").unwrap();
+        lock_writer().unwrap();
+        let brief_err = set_brief("nope").unwrap_err().to_string();
+        assert!(brief_err.contains("locked"), "{brief_err}");
+        let style_err = set_style(Some(&["drama".into()]), None, None, None)
+            .unwrap_err()
+            .to_string();
+        assert!(style_err.contains("locked"), "{style_err}");
+        let cast_err = upsert_cast("Ada", None, None, None)
+            .unwrap_err()
+            .to_string();
+        assert!(cast_err.contains("locked"), "{cast_err}");
+        let draft_err = draft_screenplay().unwrap_err().to_string();
+        assert!(draft_err.contains("locked"), "{draft_err}");
+        let revise_err = revise_screenplay("tighten").unwrap_err().to_string();
+        assert!(revise_err.contains("locked"), "{revise_err}");
+        unlock_writer().unwrap();
+        set_brief("unlocked brief").unwrap();
+        let show = require_current().unwrap().1;
+        assert_eq!(show.writer.brief, "unlocked brief");
+        assert!(!show.writer.locked);
+    }
+
+    #[test]
+    fn revise_without_draft_errors() {
+        let _g = ENV.lock().unwrap();
+        setup_show("Revise");
+        set_brief("something happens").unwrap();
+        let err = revise_screenplay("make it shorter")
+            .unwrap_err()
+            .to_string();
+        assert!(err.contains("no draft"), "{err}");
+    }
+
+    #[test]
+    fn empty_brief_refuses_draft() {
+        let _g = ENV.lock().unwrap();
+        setup_show("Empty");
+        let err = draft_screenplay().unwrap_err().to_string();
+        assert!(err.contains("no brief"), "{err}");
+    }
+
+    #[test]
+    fn no_brain_does_not_write_stub() {
+        let _g = ENV.lock().unwrap();
+        let (dir, _) = setup_show("Brain");
+        isolate_brain();
+        set_brief("a carnival drama").unwrap();
+        let err = draft_screenplay().unwrap_err().to_string();
+        assert!(err.contains("no brain —"), "{err}");
+        assert!(!dir.join(SCREENPLAY_FILE).exists());
+        std::env::remove_var("HERMES_HOME");
+        std::env::remove_var("LOT_HERMES_HOME");
+        std::env::remove_var("LOT_LOCAL_BASE_URL");
+        std::env::remove_var("LOT_LOCAL_MODEL");
+    }
+
+    #[test]
+    fn replace_cast_json_all() {
+        let _g = ENV.lock().unwrap();
+        let (dir, _) = setup_show("JsonCast");
+        upsert_cast("Temp", None, None, None).unwrap();
+        replace_cast_json(
+            r#"[{"name":"Ada","function":"lead"},{"name":"Bo","function":"foil","look":"red coat","must_not":"gun"}]"#,
+        )
+        .unwrap();
+        let show = read_show(&dir).unwrap();
+        assert_eq!(show.writer.cast.len(), 2);
+        assert_eq!(show.writer.cast[0].name, "Ada");
+        assert_eq!(show.writer.cast[1].must_not, "gun");
     }
 }

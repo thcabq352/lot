@@ -1,6 +1,8 @@
 //! Writer brains: Grok (xAI OAuth / API key) first, local OpenAI-compat second.
 //! Never invent a screenplay when no brain answers.
 
+use crate::packs::{self, lookup};
+use crate::show::Show;
 use crate::ShowError;
 use serde::{Deserialize, Serialize};
 use serde_json::{json, Value};
@@ -39,17 +41,118 @@ struct Candidate {
     model: String,
 }
 
-/// Draft a Fountain screenplay from a show name + brief. Grok first, then local.
-pub fn draft_fountain(show_name: &str, brief: &str) -> Result<Completion, ShowError> {
-    let system = "You are Lot Writer, a professional screenwriter. \
-Write a complete short screenplay in Fountain format only. \
+const DRAFT_SYSTEM: &str = "You are Lot Writer, a professional screenwriter. \
+Write a complete screenplay in Fountain format only. \
 Include a Title page (Title, Credit, Author, Draft date), then the script. \
 Use proper Fountain: scene headings (INT./EXT.), action, CHARACTER cues, dialogue. \
+Director names in the brief are coverage influence only — not endorsement, not impersonation. \
 Do not wrap the script in markdown fences. Do not invent API keys or meta commentary. \
-Author line: Lot Writer. Keep it produceable (one short film / few locations).";
-    let user =
-        format!("Show title: {show_name}\n\nBrief:\n{brief}\n\nWrite the Fountain screenplay now.");
-    complete_chat(system, &user)
+Author line: Lot Writer. Keep it produceable (locations and cast as specified).";
+
+const REVISE_SYSTEM: &str = "You are Lot Writer, revising an existing Fountain screenplay. \
+Apply the filmmaker notes. Output the complete revised Fountain only. \
+Director names are coverage influence only — not endorsement, not impersonation. \
+Do not wrap the script in markdown fences. Do not invent API keys or meta commentary. \
+Keep Author: Lot Writer.";
+
+/// Build the user prompt from brief + style + cast + format. No network.
+pub fn draft_user_prompt(show: &Show) -> String {
+    let mut out = String::new();
+    out.push_str(&format!("Show title: {}\n\n", show.name));
+    match show.writer.format.as_deref() {
+        Some(f) if !f.is_empty() => out.push_str(&format!("Format: {f}\n")),
+        _ => out.push_str("Format: unset\n"),
+    }
+    if show.writer.genres.is_empty() {
+        out.push_str("Genres: unset\n");
+    } else {
+        let labels: Vec<String> = show
+            .writer
+            .genres
+            .iter()
+            .map(|id| match lookup(packs::genres(), id) {
+                Some(it) => format!("{} ({id})", it.display_name()),
+                None => id.clone(),
+            })
+            .collect();
+        out.push_str(&format!("Genres: {}\n", labels.join(", ")));
+    }
+    out.push_str("\nLiving influence (coverage style, not endorsement):\n");
+    append_style_lines(
+        &mut out,
+        packs::living_directors(),
+        &show.writer.styles_living,
+    );
+    out.push_str("\nCanon influence (coverage style, not endorsement):\n");
+    append_style_lines(
+        &mut out,
+        packs::canon_directors(),
+        &show.writer.styles_canon,
+    );
+    out.push_str("\nCast:\n");
+    if show.writer.cast.is_empty() {
+        out.push_str("- (none set)\n");
+    } else {
+        for c in &show.writer.cast {
+            out.push_str(&format!(
+                "- {} — function: {}; look: {}; must-not: {}\n",
+                c.name,
+                empty_dash(&c.function),
+                empty_dash(&c.look),
+                empty_dash(&c.must_not)
+            ));
+        }
+    }
+    out.push_str("\nBrief:\n");
+    out.push_str(show.writer.brief.trim());
+    out.push_str("\n\nWrite the Fountain screenplay now.\n");
+    out
+}
+
+fn append_style_lines(out: &mut String, pack: &packs::PackFile, ids: &[String]) {
+    if ids.is_empty() {
+        out.push_str("- (none set)\n");
+        return;
+    }
+    for id in ids {
+        match lookup(pack, id) {
+            Some(it) => {
+                let name = it.display_name();
+                match it.notes.as_deref().map(str::trim).filter(|s| !s.is_empty()) {
+                    Some(notes) => out.push_str(&format!("- {name} ({id}) — {notes}\n")),
+                    None => out.push_str(&format!("- {name} ({id})\n")),
+                }
+            }
+            None => out.push_str(&format!("- {id}\n")),
+        }
+    }
+}
+
+fn empty_dash(s: &str) -> &str {
+    let t = s.trim();
+    if t.is_empty() {
+        "-"
+    } else {
+        t
+    }
+}
+
+/// Draft a Fountain screenplay from the full Writer contract. Grok first, then local.
+pub fn draft_fountain(show: &Show) -> Result<Completion, ShowError> {
+    complete_chat(DRAFT_SYSTEM, &draft_user_prompt(show))
+}
+
+pub fn revise_user_prompt(show: &Show, current: &str, notes: &str) -> String {
+    format!(
+        "{}\nFilmmaker revise notes:\n{}\n\nCurrent Fountain draft:\n{}\n\nRevise the Fountain screenplay now. Output the complete revised script only.\n",
+        draft_user_prompt(show),
+        notes.trim(),
+        current
+    )
+}
+
+pub fn revise_fountain(show: &Show, current: &str, notes: &str) -> Result<Completion, ShowError> {
+    complete_chat(REVISE_SYSTEM, &revise_user_prompt(show, current, notes))
 }
 
 pub fn complete_chat(system: &str, user: &str) -> Result<Completion, ShowError> {
@@ -436,6 +539,59 @@ mod tests {
         env::remove_var("LOT_HERMES_HOME");
         env::remove_var("LOT_LOCAL_BASE_URL");
         env::remove_var("LOT_LOCAL_MODEL");
+    }
+
+    #[test]
+    fn draft_prompt_includes_style_cast_format() {
+        use crate::show::{CastMember, Writer};
+        use crate::SchoolStatus;
+        let show = Show {
+            schema: 1,
+            id: "t".into(),
+            name: "Carnival".into(),
+            created_at: "0".into(),
+            updated_at: "0".into(),
+            rev: 1,
+            school: SchoolStatus::default(),
+            scenes: vec![],
+            shots: vec![],
+            takes: vec![],
+            writer: Writer {
+                brief: "A clown loses the mask.".into(),
+                genres: vec!["drama".into()],
+                styles_living: vec!["greta-gerwig".into()],
+                styles_canon: vec!["akira-kurosawa".into()],
+                format: Some("30min".into()),
+                cast: vec![CastMember {
+                    name: "Ada".into(),
+                    function: "lead".into(),
+                    look: "bare face".into(),
+                    must_not: "franchise cameo".into(),
+                }],
+                locked: false,
+                draft_path: None,
+                draft_provenance: None,
+            },
+        };
+        let p = draft_user_prompt(&show);
+        assert!(p.contains("A clown loses the mask."), "{p}");
+        assert!(p.contains("drama"), "{p}");
+        assert!(p.contains("30min"), "{p}");
+        assert!(p.contains("Ada"), "{p}");
+        assert!(p.contains("bare face"), "{p}");
+        assert!(p.contains("franchise cameo"), "{p}");
+        assert!(
+            p.contains("Greta Gerwig") && p.contains("greta-gerwig"),
+            "{p}"
+        );
+        assert!(
+            p.contains("Kurosawa") && p.contains("akira-kurosawa"),
+            "{p}"
+        );
+        assert!(
+            p.to_lowercase().contains("coverage") || p.to_lowercase().contains("influence"),
+            "{p}"
+        );
     }
 
     #[test]

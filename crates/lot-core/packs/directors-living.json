@@ -1,0 +1,106 @@
+{
+  "reviewed": "2026-08-17",
+  "disclaimer": "Influence / coverage style only. Not an endorsement by the named person. Do not impersonate them.",
+  "items": [
+    {
+      "id": "greta-gerwig",
+      "name": "Greta Gerwig",
+      "notes": "Intimate ensemble coverage; dialogue-forward two-shots; coming-of-age warmth; refuses empty spectacle."
+    },
+    {
+      "id": "christopher-nolan",
+      "name": "Christopher Nolan",
+      "notes": "Imax-scale geography; cross-cut time; practical in-camera; refuses handheld chaos without a map."
+    },
+    {
+      "id": "denis-villeneuve",
+      "name": "Denis Villeneuve",
+      "notes": "Wide negative space; hushed dread; faces held; refuses quippy relief in the turn."
+    },
+    {
+      "id": "bong-joon-ho",
+      "name": "Bong Joon-ho",
+      "notes": "Genre mash with class architecture; staircases and weather as plot; refuses a single tone."
+    },
+    {
+      "id": "chloe-zhao",
+      "name": "Chloé Zhao",
+      "notes": "Natural light; non-actor grain; landscape as character; refuses glossy studio faces."
+    },
+    {
+      "id": "ryan-coogler",
+      "name": "Ryan Coogler",
+      "notes": "Community coverage; ritual and sport; grounded myth; refuses tourist framing of place."
+    },
+    {
+      "id": "jordan-peele",
+      "name": "Jordan Peele",
+      "notes": "Social horror from the ordinary room; punch-in on the tell; refuses gore as the joke."
+    },
+    {
+      "id": "barry-jenkins",
+      "name": "Barry Jenkins",
+      "notes": "Shallow-focus portraiture; lingering close-ups; lyric time; refuses plot-only scenes."
+    },
+    {
+      "id": "celine-sciamma",
+      "name": "Céline Sciamma",
+      "notes": "Look-as-plot; spare dialogue; duration on desire; refuses explanatory voiceover."
+    },
+    {
+      "id": "park-chan-wook",
+      "name": "Park Chan-wook",
+      "notes": "Baroque camera grammar; moral trapboxes; precise violence; refuses sloppy geography."
+    },
+    {
+      "id": "lynne-ramsay",
+      "name": "Lynne Ramsay",
+      "notes": "Sound-led subjectivity; elliptical cuts; child-eye dread; refuses tidy confession."
+    },
+    {
+      "id": "wes-anderson",
+      "name": "Wes Anderson",
+      "notes": "Planimetric frames; chapter cards; deadpan ensemble; refuses handheld 'realism' as default."
+    },
+    {
+      "id": "sofia-coppola",
+      "name": "Sofia Coppola",
+      "notes": "Alienation in pretty rooms; pop-needle drops; wandering time; refuses plot pile-on."
+    },
+    {
+      "id": "hayao-miyazaki",
+      "name": "Hayao Miyazaki",
+      "notes": "Hand-drawn weather and work; flight as emotion; no villains-only; refuses cynicism as wit."
+    },
+    {
+      "id": "kathryn-bigelow",
+      "name": "Kathryn Bigelow",
+      "notes": "Embedded-camera tension; process as suspense; bodies in systems; refuses glory-shot war."
+    },
+    {
+      "id": "ava-duvernay",
+      "name": "Ava DuVernay",
+      "notes": "Civic close-ups; testimony coverage; history in rooms; refuses both-sides fog."
+    },
+    {
+      "id": "yorgos-lanthimos",
+      "name": "Yorgos Lanthimos",
+      "notes": "Wide lenses on faces; deadpan ritual; social rules as plot; refuses sentimental scoring."
+    },
+    {
+      "id": "wong-kar-wai",
+      "name": "Wong Kar-wai",
+      "notes": "Step-printed longing; doorframes and rain; clock time; refuses a clean reunion."
+    },
+    {
+      "id": "guillermo-del-toro",
+      "name": "Guillermo del Toro",
+      "notes": "Creature as soul; tactile gothic; fairy-tale morality; refuses CGI weightlessness."
+    },
+    {
+      "id": "charlotte-wells",
+      "name": "Charlotte Wells",
+      "notes": "Memory as cut; father-shaped absence; small locations; refuses biopic checklist."
+    }
+  ]
+}
