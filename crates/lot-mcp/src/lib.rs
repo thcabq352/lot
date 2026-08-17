@@ -1,8 +1,46 @@
 #![recursion_limit = "512"]
 
 use serde_json::{json, Value};
+use std::cell::RefCell;
 use std::io::{self, BufRead, Write};
 use std::path::Path;
+
+thread_local! {
+    static PROGRESS_TOKEN: RefCell<Option<Value>> = const { RefCell::new(None) };
+    static PROGRESS: RefCell<Vec<Value>> = const { RefCell::new(Vec::new()) };
+}
+
+/// Drain progress notifications emitted during the last `handle` call.
+pub fn drain_progress() -> Vec<Value> {
+    PROGRESS.with(|p| p.replace(Vec::new()))
+}
+
+fn set_progress_token(tok: Option<Value>) {
+    PROGRESS_TOKEN.with(|t| *t.borrow_mut() = tok);
+}
+
+fn emit_progress(progress: f64, total: Option<f64>, message: &str) {
+    let tok = PROGRESS_TOKEN.with(|t| t.borrow().clone());
+    let Some(token) = tok else {
+        return;
+    };
+    let mut params = serde_json::Map::new();
+    params.insert("progressToken".into(), token);
+    params.insert("progress".into(), json!(progress));
+    if let Some(t) = total {
+        params.insert("total".into(), json!(t));
+    }
+    if !message.is_empty() {
+        params.insert("message".into(), json!(message));
+    }
+    PROGRESS.with(|p| {
+        p.borrow_mut().push(json!({
+            "jsonrpc": "2.0",
+            "method": "notifications/progress",
+            "params": Value::Object(params)
+        }));
+    });
+}
 
 const PROTOCOL: &str = "2024-11-05";
 
@@ -20,6 +58,9 @@ pub fn run_stdio() -> io::Result<()> {
             Err(_) => continue,
         };
         if let Some(resp) = handle(&msg) {
+            for note in drain_progress() {
+                writeln!(stdout, "{}", note)?;
+            }
             writeln!(stdout, "{}", resp)?;
             stdout.flush()?;
         }
@@ -40,6 +81,7 @@ pub fn handle(msg: &Value) -> Option<Value> {
             }),
         )),
         "notifications/initialized" => None,
+        "notifications/cancelled" => None,
         "ping" => Some(ok(id, json!({}))),
         "tools/list" => Some(ok(id, json!({ "tools": tools() }))),
         "tools/call" => Some(ok(id, call(msg.get("params")))),
@@ -68,7 +110,7 @@ fn agent_prop() -> Value {
 }
 
 fn tools() -> Value {
-    json!([
+    let mut list = json!([
         {
             "name": "lot_status",
             "description": "First call. Kernel + current show. No GUI.",
@@ -647,7 +689,52 @@ fn tools() -> Value {
             "description": "Probe ffmpeg, Comfy, Grok, Ollama (LLM + vision), VO TTS, soundtrack, prompt server, Motion Previs, Blockout, upscale.",
             "inputSchema": { "type": "object", "properties": {} }
         }
-    ])
+    ]);
+    decorate_mutating_tools(&mut list);
+    list
+}
+
+fn decorate_mutating_tools(list: &mut Value) {
+    let Some(arr) = list.as_array_mut() else {
+        return;
+    };
+    let skip = ["lot_status", "lot_help", "lot_doctor"];
+    let output_schema = json!({
+        "type": "object",
+        "properties": {
+            "ok": { "type": "boolean" },
+            "show": { "type": "string" },
+            "show_id": { "type": "string" },
+            "rev": { "type": "integer" },
+            "event_id": { "type": ["string", "null"] },
+            "who": { "type": "string" },
+            "school": {
+                "type": "object",
+                "properties": { "enabled": { "type": "boolean" } }
+            }
+        },
+        "required": ["ok", "show", "show_id", "rev", "who", "school"]
+    });
+    let detail_prop = json!({
+        "type": "string",
+        "description": "full dumps shot prompts and cards. Default is lean (ids, counts, media path+sha256+duration)."
+    });
+    for t in arr {
+        let name = t.get("name").and_then(|n| n.as_str()).unwrap_or("");
+        if skip.contains(&name) {
+            continue;
+        }
+        if let Some(obj) = t.as_object_mut() {
+            obj.insert("outputSchema".into(), output_schema.clone());
+            if let Some(props) = obj
+                .get_mut("inputSchema")
+                .and_then(|s| s.get_mut("properties"))
+                .and_then(|p| p.as_object_mut())
+            {
+                props.insert("detail".into(), detail_prop.clone());
+            }
+        }
+    }
 }
 
 fn call(params: Option<&Value>) -> Value {
@@ -667,7 +754,20 @@ fn call(params: Option<&Value>) -> Value {
         .get("agent")
         .and_then(|v| v.as_str())
         .map(|s| s.to_string());
-    lot_core::with_caps(caps, || lot_core::with_agent(agent, || dispatch(name, &args)))
+    let full = lot_core::detail_full_value(args.get("detail"));
+    let token = params
+        .and_then(|p| p.get("_meta"))
+        .and_then(|m| m.get("progressToken"))
+        .cloned()
+        .or_else(|| args.get("progressToken").cloned());
+    set_progress_token(token);
+    let out = lot_core::with_caps(caps, || {
+        lot_core::with_agent(agent, || {
+            lot_core::with_detail(full, || dispatch(name, &args))
+        })
+    });
+    set_progress_token(None);
+    out
 }
 
 fn cap_from_args(args: &Value) -> Result<Option<lot_core::Caps>, String> {
@@ -706,11 +806,7 @@ fn dispatch(name: &str, args: &Value) -> Value {
             }
             let name = args.get("name").and_then(|v| v.as_str());
             match lot_core::create_show(Path::new(path), name) {
-                Ok((dir, show)) => mut_ok(
-                    &dir,
-                    &show,
-                    json!({ "id": show.id, "name": show.name }),
-                ),
+                Ok((dir, show)) => mut_ok(&dir, &show, json!({ "id": show.id, "name": show.name })),
                 Err(e) => tool_err(&e.to_string()),
             }
         }
@@ -720,13 +816,7 @@ fn dispatch(name: &str, args: &Value) -> Value {
                 return tool_err("path is required");
             }
             match lot_core::open_show(Path::new(path)) {
-                Ok((dir, show)) => tool_ok(&json!({
-                    "ok": true,
-                    "show": dir.display().to_string(),
-                    "id": show.id,
-                    "name": show.name,
-                    "rev": show.rev,
-                })),
+                Ok((dir, show)) => mut_ok(&dir, &show, json!({ "id": show.id, "name": show.name })),
                 Err(e) => tool_err(&e.to_string()),
             }
         }
@@ -736,11 +826,7 @@ fn dispatch(name: &str, args: &Value) -> Value {
                 return tool_err("text is required");
             }
             match lot_core::set_brief(text) {
-                Ok((dir, show)) => mut_ok(
-                    &dir,
-                    &show,
-                    json!({ "brief": show.writer.brief }),
-                ),
+                Ok((dir, show)) => mut_ok(&dir, &show, json!({ "brief": show.writer.brief })),
                 Err(e) => tool_err(&e.to_string()),
             }
         }),
@@ -759,15 +845,16 @@ fn dispatch(name: &str, args: &Value) -> Value {
                 canon.as_deref(),
                 format,
             ) {
-                Ok((dir, show)) => tool_ok(&json!({
-                    "ok": true,
-                    "show": dir.display().to_string(),
-                    "rev": show.rev,
-                    "genres": show.writer.genres,
-                    "styles_living": show.writer.styles_living,
-                    "styles_canon": show.writer.styles_canon,
-                    "format": show.writer.format,
-                })),
+                Ok((dir, show)) => mut_ok(
+                    &dir,
+                    &show,
+                    json!({
+                        "genres": show.writer.genres,
+                        "styles_living": show.writer.styles_living,
+                        "styles_canon": show.writer.styles_canon,
+                        "format": show.writer.format,
+                    }),
+                ),
                 Err(e) => tool_err(&e.to_string()),
             }
         }),
@@ -787,12 +874,7 @@ fn dispatch(name: &str, args: &Value) -> Value {
                     return tool_err("json must be an array or a JSON string");
                 };
                 return match result {
-                    Ok((dir, show)) => tool_ok(&json!({
-                        "ok": true,
-                        "show": dir.display().to_string(),
-                        "rev": show.rev,
-                        "cast": show.writer.cast,
-                    })),
+                    Ok((dir, show)) => mut_ok(&dir, &show, json!({ "cast": show.writer.cast })),
                     Err(e) => tool_err(&e.to_string()),
                 };
             }
@@ -807,23 +889,19 @@ fn dispatch(name: &str, args: &Value) -> Value {
                 .or_else(|| args.get("must-not"))
                 .and_then(|v| v.as_str());
             match lot_core::upsert_cast(name, function, look, must_not) {
-                Ok((dir, show)) => tool_ok(&json!({
-                    "ok": true,
-                    "show": dir.display().to_string(),
-                    "rev": show.rev,
-                    "cast": show.writer.cast,
-                })),
+                Ok((dir, show)) => mut_ok(&dir, &show, json!({ "cast": show.writer.cast })),
                 Err(e) => tool_err(&e.to_string()),
             }
         }),
         "lot_writer_draft" => with_path(&args, || match lot_core::draft_screenplay() {
-            Ok((dir, show)) => tool_ok(&json!({
-                "ok": true,
-                "show": dir.display().to_string(),
-                "rev": show.rev,
-                "draft": show.writer.draft_path,
-                "provenance": show.writer.draft_provenance,
-            })),
+            Ok((dir, show)) => mut_ok(
+                &dir,
+                &show,
+                json!({
+                    "draft": show.writer.draft_path,
+                    "provenance": show.writer.draft_provenance,
+                }),
+            ),
             Err(e) => tool_err(&e.to_string()),
         }),
         "lot_writer_revise" => with_path(&args, || {
@@ -832,32 +910,23 @@ fn dispatch(name: &str, args: &Value) -> Value {
                 return tool_err("notes is required");
             }
             match lot_core::revise_screenplay(notes) {
-                Ok((dir, show)) => tool_ok(&json!({
-                    "ok": true,
-                    "show": dir.display().to_string(),
-                    "rev": show.rev,
-                    "draft": show.writer.draft_path,
-                    "provenance": show.writer.draft_provenance,
-                })),
+                Ok((dir, show)) => mut_ok(
+                    &dir,
+                    &show,
+                    json!({
+                        "draft": show.writer.draft_path,
+                        "provenance": show.writer.draft_provenance,
+                    }),
+                ),
                 Err(e) => tool_err(&e.to_string()),
             }
         }),
         "lot_writer_lock" => with_path(&args, || match lot_core::lock_writer() {
-            Ok((dir, show)) => tool_ok(&json!({
-                "ok": true,
-                "show": dir.display().to_string(),
-                "rev": show.rev,
-                "locked": show.writer.locked,
-            })),
+            Ok((dir, show)) => mut_ok(&dir, &show, json!({ "locked": show.writer.locked })),
             Err(e) => tool_err(&e.to_string()),
         }),
         "lot_writer_unlock" => with_path(&args, || match lot_core::unlock_writer() {
-            Ok((dir, show)) => tool_ok(&json!({
-                "ok": true,
-                "show": dir.display().to_string(),
-                "rev": show.rev,
-                "locked": show.writer.locked,
-            })),
+            Ok((dir, show)) => mut_ok(&dir, &show, json!({ "locked": show.writer.locked })),
             Err(e) => tool_err(&e.to_string()),
         }),
         "lot_breakdown_import" => with_path(&args, || {
@@ -866,34 +935,27 @@ fn dispatch(name: &str, args: &Value) -> Value {
                 return tool_err("file is required");
             }
             match lot_core::breakdown_parse(Some(Path::new(file))) {
-                Ok((dir, show)) => tool_ok(&json!({
-                    "ok": true,
-                    "show": dir.display().to_string(),
-                    "rev": show.rev,
-                    "summary": lot_core::breakdown_summary(&show),
-                })),
+                Ok((dir, show)) => mut_ok(
+                    &dir,
+                    &show,
+                    json!({ "summary": lot_core::breakdown_summary(&show) }),
+                ),
                 Err(e) => tool_err(&e.to_string()),
             }
         }),
         "lot_breakdown_parse" => with_path(&args, || match lot_core::breakdown_parse(None) {
-            Ok((dir, show)) => tool_ok(&json!({
-                "ok": true,
-                "show": dir.display().to_string(),
-                "rev": show.rev,
-                "summary": lot_core::breakdown_summary(&show),
-            })),
+            Ok((dir, show)) => mut_ok(
+                &dir,
+                &show,
+                json!({ "summary": lot_core::breakdown_summary(&show) }),
+            ),
             Err(e) => tool_err(&e.to_string()),
         }),
         "lot_wall_add" => with_path(&args, || {
             let text = args.get("text").and_then(|v| v.as_str()).unwrap_or("");
             let act = args.get("act").and_then(|v| v.as_str());
             match lot_core::wall_add(act, text) {
-                Ok((dir, show)) => tool_ok(&json!({
-                    "ok": true,
-                    "show": dir.display().to_string(),
-                    "rev": show.rev,
-                    "wall": show.wall,
-                })),
+                Ok((dir, show)) => mut_ok(&dir, &show, json!({ "wall": show.wall })),
                 Err(e) => tool_err(&e.to_string()),
             }
         }),
@@ -906,12 +968,7 @@ fn dispatch(name: &str, args: &Value) -> Value {
             let notes = args.get("notes").and_then(|v| v.as_str());
             let kind = args.get("kind").and_then(|v| v.as_str());
             match lot_core::stage_place(shot, who, mark, x, z, notes, kind) {
-                Ok((dir, show)) => tool_ok(&json!({
-                    "ok": true,
-                    "show": dir.display().to_string(),
-                    "rev": show.rev,
-                    "shots": show.shots,
-                })),
+                Ok((dir, show)) => mut_ok(&dir, &show, json!({ "shots": show.shots })),
                 Err(e) => tool_err(&e.to_string()),
             }
         }),
@@ -925,49 +982,41 @@ fn dispatch(name: &str, args: &Value) -> Value {
                 .or_else(|| args.get("move_kind"))
                 .and_then(|v| v.as_str());
             match lot_core::stage_camera(shot, size, angle, lens, mv) {
-                Ok((dir, show)) => tool_ok(&json!({
-                    "ok": true,
-                    "show": dir.display().to_string(),
-                    "rev": show.rev,
-                    "shots": show.shots,
-                })),
+                Ok((dir, show)) => mut_ok(&dir, &show, json!({ "shots": show.shots })),
                 Err(e) => tool_err(&e.to_string()),
             }
         }),
         "lot_stage_export" => with_path(&args, || match lot_core::stage_export() {
-            Ok((dir, show, file)) => tool_ok(&json!({
-                "ok": true,
-                "show": dir.display().to_string(),
-                "rev": show.rev,
-                "export": file.display().to_string(),
-            })),
+            Ok((dir, show, file)) => {
+                mut_ok(&dir, &show, json!({ "export": file.display().to_string() }))
+            }
             Err(e) => tool_err(&e.to_string()),
         }),
         "lot_picture_lock" => with_path(&args, || {
             let shot = args.get("shot").and_then(|v| v.as_str()).unwrap_or("");
             let locked = args.get("locked").and_then(|v| v.as_bool()).unwrap_or(true);
             match lot_core::picture_lock(shot, locked) {
-                Ok((dir, show)) => tool_ok(&json!({
-                    "ok": true,
-                    "show": dir.display().to_string(),
-                    "rev": show.rev,
-                    "shots": show.shots,
-                })),
+                Ok((dir, show)) => mut_ok(&dir, &show, json!({ "shots": show.shots })),
                 Err(e) => tool_err(&e.to_string()),
             }
         }),
         "lot_stills_generate" => with_path(&args, || {
+            emit_progress(0.0, Some(1.0), "stills generate");
             let shot = args.get("shot").and_then(|v| v.as_str()).unwrap_or("");
             let backend = args.get("backend").and_then(|v| v.as_str()).unwrap_or("");
             let prompt = args.get("prompt").and_then(|v| v.as_str());
             match lot_core::stills_generate(shot, backend, prompt) {
-                Ok((dir, show)) => tool_ok(&json!({
-                    "ok": true,
-                    "show": dir.display().to_string(),
-                    "rev": show.rev,
-                    "stills_backend": show.stills_backend,
-                    "shots": show.shots,
-                })),
+                Ok((dir, show)) => {
+                    emit_progress(1.0, Some(1.0), "stills generate");
+                    mut_ok(
+                        &dir,
+                        &show,
+                        json!({
+                            "stills_backend": show.stills_backend,
+                            "shots": show.shots,
+                        }),
+                    )
+                }
                 Err(e) => tool_err(&e.to_string()),
             }
         }),
@@ -975,22 +1024,14 @@ fn dispatch(name: &str, args: &Value) -> Value {
             let shot = args.get("shot").and_then(|v| v.as_str()).unwrap_or("");
             let file = args.get("file").and_then(|v| v.as_str()).map(Path::new);
             match lot_core::stills_describe(shot, file) {
-                Ok((dir, show)) => tool_ok(&json!({
-                    "ok": true,
-                    "show": dir.display().to_string(),
-                    "rev": show.rev,
-                    "shots": show.shots,
-                })),
+                Ok((dir, show)) => mut_ok(&dir, &show, json!({ "shots": show.shots })),
                 Err(e) => tool_err(&e.to_string()),
             }
         }),
         "lot_board_export" => with_path(&args, || match lot_core::board_export() {
-            Ok((dir, show, file)) => tool_ok(&json!({
-                "ok": true,
-                "show": dir.display().to_string(),
-                "rev": show.rev,
-                "export": file.display().to_string(),
-            })),
+            Ok((dir, show, file)) => {
+                mut_ok(&dir, &show, json!({ "export": file.display().to_string() }))
+            }
             Err(e) => tool_err(&e.to_string()),
         }),
         "lot_slate_set" => with_path(&args, || {
@@ -998,12 +1039,7 @@ fn dispatch(name: &str, args: &Value) -> Value {
             let prompt = args.get("prompt").and_then(|v| v.as_str()).unwrap_or("");
             let target = args.get("target").and_then(|v| v.as_str());
             match lot_core::slate_set(shot, prompt, target) {
-                Ok((dir, show)) => tool_ok(&json!({
-                    "ok": true,
-                    "show": dir.display().to_string(),
-                    "rev": show.rev,
-                    "shots": show.shots,
-                })),
+                Ok((dir, show)) => mut_ok(&dir, &show, json!({ "shots": show.shots })),
                 Err(e) => tool_err(&e.to_string()),
             }
         }),
@@ -1011,25 +1047,21 @@ fn dispatch(name: &str, args: &Value) -> Value {
             let shot = args.get("shot").and_then(|v| v.as_str()).unwrap_or("");
             let target = args.get("target").and_then(|v| v.as_str());
             match lot_core::slate_compile(shot, target) {
-                Ok((dir, show)) => tool_ok(&json!({
-                    "ok": true,
-                    "show": dir.display().to_string(),
-                    "rev": show.rev,
-                    "shots": show.shots,
-                    "slate": show.slate,
-                })),
+                Ok((dir, show)) => mut_ok(
+                    &dir,
+                    &show,
+                    json!({
+                        "shots": show.shots,
+                        "slate": show.slate,
+                    }),
+                ),
                 Err(e) => tool_err(&e.to_string()),
             }
         }),
         "lot_slate_target" => with_path(&args, || {
             let id = args.get("id").and_then(|v| v.as_str()).unwrap_or("");
             match lot_core::slate_target(id) {
-                Ok((dir, show)) => tool_ok(&json!({
-                    "ok": true,
-                    "show": dir.display().to_string(),
-                    "rev": show.rev,
-                    "slate": show.slate,
-                })),
+                Ok((dir, show)) => mut_ok(&dir, &show, json!({ "slate": show.slate })),
                 Err(e) => tool_err(&e.to_string()),
             }
         }),
@@ -1039,13 +1071,14 @@ fn dispatch(name: &str, args: &Value) -> Value {
             let weight = args.get("weight").and_then(|v| v.as_str());
             let model = args.get("model").and_then(|v| v.as_str());
             match lot_core::slate_lora(shot, id, weight, model) {
-                Ok((dir, show)) => tool_ok(&json!({
-                    "ok": true,
-                    "show": dir.display().to_string(),
-                    "rev": show.rev,
-                    "slate": show.slate,
-                    "shots": show.shots,
-                })),
+                Ok((dir, show)) => mut_ok(
+                    &dir,
+                    &show,
+                    json!({
+                        "slate": show.slate,
+                        "shots": show.shots,
+                    }),
+                ),
                 Err(e) => tool_err(&e.to_string()),
             }
         }),
@@ -1057,12 +1090,7 @@ fn dispatch(name: &str, args: &Value) -> Value {
                 return tool_err("file is required");
             }
             match lot_core::motion_plate(Path::new(file), shot, mode) {
-                Ok((dir, show)) => tool_ok(&json!({
-                    "ok": true,
-                    "show": dir.display().to_string(),
-                    "rev": show.rev,
-                    "shots": show.shots,
-                })),
+                Ok((dir, show)) => mut_ok(&dir, &show, json!({ "shots": show.shots })),
                 Err(e) => tool_err(&e.to_string()),
             }
         }),
@@ -1075,37 +1103,25 @@ fn dispatch(name: &str, args: &Value) -> Value {
             let notes = args.get("notes").and_then(|v| v.as_str());
             let mode = args.get("mode").and_then(|v| v.as_str());
             match lot_core::motion_marks(shot, mv, notes, mode) {
-                Ok((dir, show)) => tool_ok(&json!({
-                    "ok": true,
-                    "show": dir.display().to_string(),
-                    "rev": show.rev,
-                    "shots": show.shots,
-                })),
+                Ok((dir, show)) => mut_ok(&dir, &show, json!({ "shots": show.shots })),
                 Err(e) => tool_err(&e.to_string()),
             }
         }),
         "lot_motion_export" => with_path(&args, || match lot_core::motion_export() {
-            Ok((dir, show, file)) => tool_ok(&json!({
-                "ok": true,
-                "show": dir.display().to_string(),
-                "rev": show.rev,
-                "export": file.display().to_string(),
-            })),
+            Ok((dir, show, file)) => {
+                mut_ok(&dir, &show, json!({ "export": file.display().to_string() }))
+            }
             Err(e) => tool_err(&e.to_string()),
         }),
         "lot_motion_analyze" => with_path(&args, || {
             let shot = args.get("shot").and_then(|v| v.as_str()).unwrap_or("");
             match lot_core::motion_analyze(shot) {
-                Ok((dir, show)) => tool_ok(&json!({
-                    "ok": true,
-                    "show": dir.display().to_string(),
-                    "rev": show.rev,
-                    "shots": show.shots,
-                })),
+                Ok((dir, show)) => mut_ok(&dir, &show, json!({ "shots": show.shots })),
                 Err(e) => tool_err(&e.to_string()),
             }
         }),
         "lot_finish" => with_path(&args, || {
+            emit_progress(0.0, Some(1.0), "finish");
             let file = args.get("file").and_then(|v| v.as_str()).map(Path::new);
             let upscale = args
                 .get("upscale")
@@ -1113,13 +1129,17 @@ fn dispatch(name: &str, args: &Value) -> Value {
                 .unwrap_or(false);
             let fps = args.get("fps").and_then(|v| v.as_str());
             match lot_core::finish_pickup(file, upscale, fps) {
-                Ok((dir, show, out)) => tool_ok(&json!({
-                    "ok": true,
-                    "show": dir.display().to_string(),
-                    "rev": show.rev,
-                    "finish": show.finish,
-                    "file": out.display().to_string(),
-                })),
+                Ok((dir, show, out)) => {
+                    emit_progress(1.0, Some(1.0), "finish");
+                    mut_ok(
+                        &dir,
+                        &show,
+                        json!({
+                            "finish": show.finish,
+                            "file": out.display().to_string(),
+                        }),
+                    )
+                }
                 Err(e) => tool_err(&e.to_string()),
             }
         }),
@@ -1127,35 +1147,30 @@ fn dispatch(name: &str, args: &Value) -> Value {
             let file = args.get("file").and_then(|v| v.as_str()).map(Path::new);
             let dir = args.get("dir").and_then(|v| v.as_str()).map(Path::new);
             match lot_core::dailies_ingest(file, dir) {
-                Ok((show_dir, show)) => tool_ok(&json!({
-                    "ok": true,
-                    "show": show_dir.display().to_string(),
-                    "rev": show.rev,
-                    "takes": show.takes,
-                })),
+                Ok((show_dir, show, report)) => mut_ok(
+                    &show_dir,
+                    &show,
+                    json!({
+                        "ingested": report.ingested,
+                        "resumed": report.resumed,
+                        "takes": show.takes
+                    }),
+                ),
                 Err(e) => tool_err(&e.to_string()),
             }
         }),
         "lot_dailies_circle" => with_path(&args, || {
             let take = args.get("take").and_then(|v| v.as_str()).unwrap_or("");
             match lot_core::dailies_circle(take) {
-                Ok((dir, show)) => tool_ok(&json!({
-                    "ok": true,
-                    "show": dir.display().to_string(),
-                    "rev": show.rev,
-                    "takes": show.takes,
-                })),
+                Ok((dir, show)) => mut_ok(&dir, &show, json!({ "takes": show.takes })),
                 Err(e) => tool_err(&e.to_string()),
             }
         }),
         "lot_dailies_export" | "lot_cut_export" => {
             with_path(&args, || match lot_core::dailies_export() {
-                Ok((dir, show, file)) => tool_ok(&json!({
-                    "ok": true,
-                    "show": dir.display().to_string(),
-                    "rev": show.rev,
-                    "export": file.display().to_string(),
-                })),
+                Ok((dir, show, file)) => {
+                    mut_ok(&dir, &show, json!({ "export": file.display().to_string() }))
+                }
                 Err(e) => tool_err(&e.to_string()),
             })
         }
@@ -1167,12 +1182,7 @@ fn dispatch(name: &str, args: &Value) -> Value {
                 .and_then(|v| v.as_bool())
                 .unwrap_or(false);
             match lot_core::stems_soundtrack(brief, file, generate) {
-                Ok((dir, show)) => tool_ok(&json!({
-                    "ok": true,
-                    "show": dir.display().to_string(),
-                    "rev": show.rev,
-                    "stems": show.stems,
-                })),
+                Ok((dir, show)) => mut_ok(&dir, &show, json!({ "stems": show.stems })),
                 Err(e) => tool_err(&e.to_string()),
             }
         }),
@@ -1184,12 +1194,7 @@ fn dispatch(name: &str, args: &Value) -> Value {
                 .and_then(|v| v.as_bool())
                 .unwrap_or(false);
             match lot_core::stems_vo(text, file, generate) {
-                Ok((dir, show)) => tool_ok(&json!({
-                    "ok": true,
-                    "show": dir.display().to_string(),
-                    "rev": show.rev,
-                    "stems": show.stems,
-                })),
+                Ok((dir, show)) => mut_ok(&dir, &show, json!({ "stems": show.stems })),
                 Err(e) => tool_err(&e.to_string()),
             }
         }),
@@ -1197,23 +1202,19 @@ fn dispatch(name: &str, args: &Value) -> Value {
             let list = args.get("list").and_then(|v| v.as_bool()).unwrap_or(false);
             if list {
                 return match lot_core::snapshot_list() {
-                    Ok((dir, show, revs)) => tool_ok(&json!({
-                        "ok": true,
-                        "show": dir.display().to_string(),
-                        "rev": show.rev,
-                        "revs": revs,
-                    })),
+                    Ok((dir, show, revs)) => mut_ok(&dir, &show, json!({ "revs": revs })),
                     Err(e) => tool_err(&e.to_string()),
                 };
             }
             match lot_core::snapshot_show() {
-                Ok((dir, show, dest, rev)) => tool_ok(&json!({
-                    "ok": true,
-                    "show": dir.display().to_string(),
-                    "rev": show.rev,
-                    "snapshot_rev": rev,
-                    "snapshot": dest.display().to_string(),
-                })),
+                Ok((dir, show, dest, rev)) => mut_ok(
+                    &dir,
+                    &show,
+                    json!({
+                        "snapshot_rev": rev,
+                        "snapshot": dest.display().to_string(),
+                    }),
+                ),
                 Err(e) => tool_err(&e.to_string()),
             }
         }),
@@ -1223,12 +1224,7 @@ fn dispatch(name: &str, args: &Value) -> Value {
                 return tool_err("rev is required");
             }
             match lot_core::restore_show(rev) {
-                Ok((dir, show)) => tool_ok(&json!({
-                    "ok": true,
-                    "show": dir.display().to_string(),
-                    "rev": show.rev,
-                    "from_rev": rev,
-                })),
+                Ok((dir, show)) => mut_ok(&dir, &show, json!({ "from_rev": rev })),
                 Err(e) => tool_err(&e.to_string()),
             }
         }),
@@ -1239,18 +1235,16 @@ fn dispatch(name: &str, args: &Value) -> Value {
         "lot_unlock" => with_path(&args, || {
             let force = args.get("force").and_then(|v| v.as_bool()).unwrap_or(false);
             match lot_core::unlock_show(force) {
-                Ok((dir, show)) => tool_ok(&json!({
-                    "ok": true,
-                    "show": dir.display().to_string(),
-                    "rev": show.rev,
-                    "locked_by": show.locked_by,
-                })),
+                Ok((dir, show)) => mut_ok(&dir, &show, json!({ "locked_by": show.locked_by })),
                 Err(e) => tool_err(&e.to_string()),
             }
         }),
         "lot_budget" => with_path(&args, || {
             let spend = args.get("spend").and_then(|v| v.as_u64()).map(|n| n as u32);
-            let render = args.get("render").and_then(|v| v.as_u64()).map(|n| n as u32);
+            let render = args
+                .get("render")
+                .and_then(|v| v.as_u64())
+                .map(|n| n as u32);
             let clear_spend = args
                 .get("clear_spend")
                 .or_else(|| args.get("clear-spend"))
@@ -1267,7 +1261,10 @@ fn dispatch(name: &str, args: &Value) -> Value {
             }
         }),
         "lot_log" => with_path(&args, || {
-            let export = args.get("export").and_then(|v| v.as_bool()).unwrap_or(false);
+            let export = args
+                .get("export")
+                .and_then(|v| v.as_bool())
+                .unwrap_or(false);
             if export {
                 match lot_core::export_log() {
                     Ok((dir, show, dest, count)) => mut_ok(
@@ -1283,11 +1280,9 @@ fn dispatch(name: &str, args: &Value) -> Value {
             } else {
                 let n = args.get("n").and_then(|v| v.as_u64()).unwrap_or(20) as u32;
                 match lot_core::show_log(Some(n)) {
-                    Ok((dir, show, events)) => mut_ok(
-                        &dir,
-                        &show,
-                        json!({ "events": events, "n": events.len() }),
-                    ),
+                    Ok((dir, show, events)) => {
+                        mut_ok(&dir, &show, json!({ "events": events, "n": events.len() }))
+                    }
                     Err(e) => tool_err(&e.to_string()),
                 }
             }
@@ -1338,7 +1333,10 @@ fn dispatch(name: &str, args: &Value) -> Value {
             }
         }),
         "lot_handoff" => with_path(&args, || {
-            let commit = args.get("commit").and_then(|v| v.as_bool()).unwrap_or(false);
+            let commit = args
+                .get("commit")
+                .and_then(|v| v.as_bool())
+                .unwrap_or(false);
             match lot_core::handoff(commit) {
                 Ok((dir, show, report)) => {
                     let extra = serde_json::to_value(&report).unwrap_or(json!({}));
@@ -1462,7 +1460,8 @@ fn mut_ok(dir: &Path, show: &lot_core::Show, extra: Value) -> Value {
 
 fn tool_ok(v: &Value) -> Value {
     json!({
-        "content": [{ "type": "text", "text": v.to_string() }]
+        "content": [{ "type": "text", "text": v.to_string() }],
+        "structuredContent": v
     })
 }
 
@@ -1582,5 +1581,350 @@ mod tests {
     #[test]
     fn notify_no_reply() {
         assert!(handle(&json!({"jsonrpc":"2.0","method":"notifications/initialized"})).is_none());
+        assert!(handle(&json!({"jsonrpc":"2.0","method":"notifications/cancelled"})).is_none());
+    }
+
+    fn call_body(name: &str, args: Value) -> Value {
+        let r = handle(&json!({
+            "jsonrpc":"2.0","id":9,"method":"tools/call",
+            "params":{"name": name, "arguments": args}
+        }))
+        .unwrap();
+        assert_ne!(
+            r["result"]["isError"], true,
+            "{}",
+            r["result"]["content"][0]["text"]
+        );
+        let text = r["result"]["content"][0]["text"].as_str().unwrap();
+        serde_json::from_str(text).unwrap()
+    }
+
+    fn assert_mutation_envelope(body: &Value) {
+        assert_eq!(body["ok"], true, "{body}");
+        assert!(
+            body["show"]
+                .as_str()
+                .map(|s| !s.is_empty())
+                .unwrap_or(false),
+            "show {body}"
+        );
+        assert!(
+            body["show_id"]
+                .as_str()
+                .map(|s| s.starts_with("show-"))
+                .unwrap_or(false),
+            "show_id {body}"
+        );
+        assert!(body["rev"].as_u64().is_some(), "rev {body}");
+        assert!(body.get("event_id").is_some(), "event_id {body}");
+        assert!(
+            body["who"].as_str().map(|s| !s.is_empty()).unwrap_or(false),
+            "who {body}"
+        );
+        assert!(body.get("school").is_some(), "school {body}");
+    }
+
+    #[test]
+    fn mutating_tools_return_cli_envelope() {
+        let root = std::env::temp_dir().join(format!(
+            "lot-mcp-envelope-{}-{}",
+            std::process::id(),
+            std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .map(|d| d.as_nanos())
+                .unwrap_or(0)
+        ));
+        let _ = std::fs::remove_dir_all(&root);
+        std::fs::create_dir_all(&root).unwrap();
+        std::env::set_var("LOT_HOME", root.join("home"));
+        std::env::remove_var("LOT_SHOW");
+        std::env::remove_var("LOT_CAP");
+        std::env::remove_var("LOT_AGENT");
+        lot_core::clear_caps();
+        lot_core::clear_agent();
+
+        let show_dir = root.join("show");
+        let created = call_body(
+            "lot_create",
+            json!({ "path": show_dir.display().to_string(), "name": "Envelope" }),
+        );
+        assert_mutation_envelope(&created);
+        assert_eq!(created["name"], "Envelope");
+
+        let opened = call_body(
+            "lot_open",
+            json!({ "path": show_dir.display().to_string() }),
+        );
+        assert_mutation_envelope(&opened);
+        assert_eq!(opened["id"], created["show_id"]);
+
+        let brief = call_body(
+            "lot_writer_brief",
+            json!({
+                "path": show_dir.display().to_string(),
+                "text": "A woman waits by a neon tent."
+            }),
+        );
+        assert_mutation_envelope(&brief);
+        assert_eq!(brief["brief"], "A woman waits by a neon tent.");
+
+        let style = call_body(
+            "lot_writer_style",
+            json!({
+                "path": show_dir.display().to_string(),
+                "genre": "drama",
+                "format": "advertisement"
+            }),
+        );
+        assert_mutation_envelope(&style);
+        assert_eq!(style["format"], "advertisement");
+
+        let snap = call_body(
+            "lot_snapshot",
+            json!({ "path": show_dir.display().to_string() }),
+        );
+        assert_mutation_envelope(&snap);
+        assert!(snap.get("snapshot").is_some(), "{snap}");
+
+        let listed = call_body(
+            "lot_snapshot",
+            json!({ "path": show_dir.display().to_string(), "list": true }),
+        );
+        assert_mutation_envelope(&listed);
+        assert!(listed["revs"].as_array().is_some(), "{listed}");
+    }
+
+    #[test]
+    fn tools_advertise_output_schema_and_detail() {
+        let r = handle(&json!({"jsonrpc":"2.0","id":2,"method":"tools/list"})).unwrap();
+        let tools = r["result"]["tools"].as_array().unwrap();
+        let stage = tools
+            .iter()
+            .find(|t| t["name"] == "lot_stage_place")
+            .unwrap();
+        assert_eq!(
+            stage["outputSchema"]["properties"]["show_id"]["type"],
+            "string"
+        );
+        assert!(stage["inputSchema"]["properties"].get("detail").is_some());
+        let status = tools.iter().find(|t| t["name"] == "lot_status").unwrap();
+        assert!(status.get("outputSchema").is_none());
+    }
+
+    #[test]
+    fn mutating_tools_are_lean_unless_detail_full() {
+        let root = std::env::temp_dir().join(format!(
+            "lot-mcp-lean-{}-{}",
+            std::process::id(),
+            std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .map(|d| d.as_nanos())
+                .unwrap_or(0)
+        ));
+        let _ = std::fs::remove_dir_all(&root);
+        std::fs::create_dir_all(&root).unwrap();
+        std::env::set_var("LOT_HOME", root.join("home"));
+        std::env::remove_var("LOT_SHOW");
+        lot_core::clear_caps();
+        lot_core::clear_agent();
+
+        let show_dir = root.join("show");
+        call_body(
+            "lot_create",
+            json!({ "path": show_dir.display().to_string(), "name": "Lean" }),
+        );
+        let script = root.join("script.txt");
+        std::fs::write(
+            &script,
+            "INT. TENT - NIGHT\n\nADA (quietly)\nDon't put it on.\n",
+        )
+        .unwrap();
+        call_body(
+            "lot_breakdown_import",
+            json!({
+                "path": show_dir.display().to_string(),
+                "file": script.display().to_string()
+            }),
+        );
+        call_body(
+            "lot_slate_set",
+            json!({
+                "path": show_dir.display().to_string(),
+                "shot": "01",
+                "prompt": "wide tent, neon rain, keep this prompt off the default payload"
+            }),
+        );
+        let placed = call_body(
+            "lot_stage_place",
+            json!({
+                "path": show_dir.display().to_string(),
+                "shot": "01",
+                "who": "Ada",
+                "mark": "by the trunk",
+                "x": "2",
+                "z": "4"
+            }),
+        );
+        assert_mutation_envelope(&placed);
+        let shot = &placed["shots"][0];
+        assert_eq!(shot["num"], "01");
+        assert!(shot.get("prompt").is_none(), "lean dump {placed}");
+        assert!(shot.get("prompt_targets").is_none(), "lean dump {placed}");
+        assert_eq!(shot["marks"], 1);
+
+        let full = call_body(
+            "lot_stage_place",
+            json!({
+                "path": show_dir.display().to_string(),
+                "shot": "01",
+                "who": "Ada",
+                "mark": "by the trunk",
+                "detail": "full"
+            }),
+        );
+        assert_eq!(
+            full["shots"][0]["prompt"],
+            "wide tent, neon rain, keep this prompt off the default payload"
+        );
+        let raw = handle(&json!({
+            "jsonrpc":"2.0","id":11,"method":"tools/call",
+            "params":{"name":"lot_writer_brief","arguments":{
+                "path": show_dir.display().to_string(),
+                "text": "A woman waits."
+            }}
+        }))
+        .unwrap();
+        assert_eq!(raw["result"]["structuredContent"]["ok"], true);
+    }
+
+    #[test]
+    fn dailies_ingest_is_idempotent() {
+        let root = std::env::temp_dir().join(format!(
+            "lot-mcp-ingest-{}-{}",
+            std::process::id(),
+            std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .map(|d| d.as_nanos())
+                .unwrap_or(0)
+        ));
+        let _ = std::fs::remove_dir_all(&root);
+        std::fs::create_dir_all(&root).unwrap();
+        std::env::set_var("LOT_HOME", root.join("home"));
+        std::env::remove_var("LOT_SHOW");
+        lot_core::clear_caps();
+        lot_core::clear_agent();
+
+        let show_dir = root.join("show");
+        call_body(
+            "lot_create",
+            json!({ "path": show_dir.display().to_string(), "name": "Ingest" }),
+        );
+        let script = root.join("script.txt");
+        std::fs::write(
+            &script,
+            "INT. TENT - NIGHT\n\nADA (quietly)\nDon't put it on.\n",
+        )
+        .unwrap();
+        call_body(
+            "lot_breakdown_import",
+            json!({
+                "path": show_dir.display().to_string(),
+                "file": script.display().to_string()
+            }),
+        );
+        let clip = show_dir.join("media").join("01-foo.mp4");
+        std::fs::create_dir_all(clip.parent().unwrap()).unwrap();
+        std::fs::write(&clip, b"mcp-ingest-bytes").unwrap();
+        let first = call_body(
+            "lot_dailies_ingest",
+            json!({
+                "path": show_dir.display().to_string(),
+                "file": clip.display().to_string()
+            }),
+        );
+        assert_mutation_envelope(&first);
+        assert_eq!(first["ingested"], 1);
+        assert_eq!(first["takes"].as_array().unwrap().len(), 1);
+        let take_id = first["takes"][0]["id"].clone();
+        let rev = first["rev"].clone();
+        let second = call_body(
+            "lot_dailies_ingest",
+            json!({
+                "path": show_dir.display().to_string(),
+                "file": clip.display().to_string()
+            }),
+        );
+        assert_eq!(second["takes"].as_array().unwrap().len(), 1);
+        assert_eq!(second["takes"][0]["id"], take_id);
+        assert_eq!(second["rev"], rev);
+        assert_eq!(second["resumed"], 1);
+        assert_eq!(second["ingested"], 0);
+    }
+
+    #[test]
+    fn stills_generate_emits_progress_for_token() {
+        let root = std::env::temp_dir().join(format!(
+            "lot-mcp-progress-{}-{}",
+            std::process::id(),
+            std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .map(|d| d.as_nanos())
+                .unwrap_or(0)
+        ));
+        let _ = std::fs::remove_dir_all(&root);
+        std::fs::create_dir_all(&root).unwrap();
+        std::env::set_var("LOT_HOME", root.join("home"));
+        std::env::remove_var("LOT_SHOW");
+        lot_core::clear_caps();
+        lot_core::clear_agent();
+
+        let show_dir = root.join("show");
+        call_body(
+            "lot_create",
+            json!({ "path": show_dir.display().to_string(), "name": "Progress" }),
+        );
+        let script = root.join("script.txt");
+        std::fs::write(
+            &script,
+            "INT. TENT - NIGHT\n\nADA (quietly)\nDon't put it on.\n",
+        )
+        .unwrap();
+        call_body(
+            "lot_breakdown_import",
+            json!({
+                "path": show_dir.display().to_string(),
+                "file": script.display().to_string()
+            }),
+        );
+        call_body(
+            "lot_slate_set",
+            json!({
+                "path": show_dir.display().to_string(),
+                "shot": "01",
+                "prompt": "wide tent, neon rain"
+            }),
+        );
+        let _ = drain_progress();
+        let raw = handle(&json!({
+            "jsonrpc":"2.0","id":12,"method":"tools/call",
+            "params":{
+                "name":"lot_stills_generate",
+                "arguments":{
+                    "path": show_dir.display().to_string(),
+                    "shot":"01",
+                    "backend":"grok"
+                },
+                "_meta": { "progressToken": "stills-1" }
+            }
+        }))
+        .unwrap();
+        let notes = drain_progress();
+        assert!(
+            !notes.is_empty(),
+            "expected progress notifications, got {notes:?} result={raw}"
+        );
+        assert_eq!(notes[0]["method"], "notifications/progress");
+        assert_eq!(notes[0]["params"]["progressToken"], "stills-1");
+        assert!(notes[0]["params"]["progress"].as_f64().is_some());
     }
 }

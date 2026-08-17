@@ -1,14 +1,13 @@
 use clap::{Parser, Subcommand};
 use lot_core::{
     board_export, breakdown_parse, breakdown_summary, create_show, dailies_circle, dailies_export,
-    export_log, handoff, import_file,
-    dailies_ingest, draft_screenplay, finish_pickup, help_plain, help_spec, lock_show, lock_writer,
-    motion_analyze, motion_export, motion_marks, motion_plate, open_show, picture_lock,
-    mutation_json, replace_cast_json, resource_read, restore_show, revise_screenplay, set_brief, set_budget,
-    set_style, show_log, slate_compile,
-    slate_lora, slate_set, slate_target, snapshot_list, snapshot_show, stage_camera, stage_export,
-    stage_place, stems_soundtrack, stems_vo, stills_describe, stills_generate, unlock_writer,
-    unlock_show, upsert_cast, wall_add, Doctor, Status,
+    dailies_ingest, draft_screenplay, export_log, finish_pickup, handoff, help_plain, help_spec,
+    import_file, lock_show, lock_writer, motion_analyze, motion_export, motion_marks, motion_plate,
+    mutation_json, open_show, picture_lock, replace_cast_json, resource_read, restore_show,
+    revise_screenplay, set_brief, set_budget, set_style, show_log, slate_compile, slate_lora,
+    slate_set, slate_target, snapshot_list, snapshot_show, stage_camera, stage_export, stage_place,
+    stems_soundtrack, stems_vo, stills_describe, stills_generate, unlock_show, unlock_writer,
+    upsert_cast, wall_add, Doctor, Status,
 };
 use std::path::{Path, PathBuf};
 use std::process::ExitCode;
@@ -32,6 +31,9 @@ struct Cli {
     /// Who is writing. Unset = human (no auto-claim). Second agent gets locked_by.
     #[arg(long, global = true)]
     agent: Option<String>,
+    /// Dump full shot/prompt cards on --json. Default is lean. Use `--detail full`.
+    #[arg(long, global = true)]
+    detail: Option<String>,
     #[command(subcommand)]
     cmd: Option<Cmd>,
 }
@@ -451,6 +453,7 @@ fn main() -> ExitCode {
     if let Some(id) = cli.agent {
         lot_core::set_agent(Some(id));
     }
+    lot_core::set_detail_full(lot_core::detail_full(cli.detail.as_deref()));
     match cli.cmd.unwrap_or(Cmd::Status) {
         Cmd::Status => {
             if let Some(code) = apply_show(cli.show.as_deref(), cli.json) {
@@ -944,10 +947,7 @@ fn main() -> ExitCode {
                     &dir,
                     &show,
                     serde_json::json!({ "locked_by": show.locked_by }),
-                    &format!(
-                        "locked by {}",
-                        show.locked_by.as_deref().unwrap_or("human")
-                    ),
+                    &format!("locked by {}", show.locked_by.as_deref().unwrap_or("human")),
                 ),
                 Err(e) => fail(cli.json, &e.to_string()),
             }
@@ -1142,17 +1142,22 @@ fn breakdown_cmd(cmd: BreakdownCmd, json: bool) -> ExitCode {
 fn dailies_cmd(cmd: DailiesCmd, json: bool) -> ExitCode {
     match cmd {
         DailiesCmd::Ingest { file, dir } => match dailies_ingest(file.as_deref(), dir.as_deref()) {
-            Ok((show_dir, show)) => ok_writer(
+            Ok((show_dir, show, report)) => ok_writer(
                 json,
                 &show_dir,
                 &show,
                 serde_json::json!({
+                    "ingested": report.ingested,
+                    "resumed": report.resumed,
                     "takes": show.takes,
                     "shots": show.shots.iter().map(|s| {
                         serde_json::json!({ "num": s.num, "name": s.name })
                     }).collect::<Vec<_>>()
                 }),
-                &format!("ingested {} takes", show.takes.len()),
+                &format!(
+                    "ingested {} takes (resumed {})",
+                    report.ingested, report.resumed
+                ),
             ),
             Err(e) => fail(json, &e.to_string()),
         },

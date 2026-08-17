@@ -94,6 +94,7 @@ pub fn export_log() -> Result<(PathBuf, Show, PathBuf, usize), ShowError> {
 }
 
 pub fn mutation_json(dir: &Path, show: &Show, extra: Value) -> Value {
+    let extra = crate::lean_extra(extra, crate::detail_full_active());
     let ev = last_event(dir);
     let mut v = json!({
         "ok": true,
@@ -220,5 +221,53 @@ mod tests {
         assert_eq!(r["prompt"], "wide tent");
         assert_eq!(redact_value(&json!("sk-live-xyz")), "[redacted]");
         assert_eq!(redact_value(&json!("wide tent")), "wide tent");
+    }
+
+    #[test]
+    fn mutation_json_has_cli_envelope() {
+        let stamp = std::process::id();
+        let root = std::env::temp_dir().join(format!("lot-audit-envelope-{stamp}"));
+        let _ = fs::remove_dir_all(&root);
+        std::env::set_var("LOT_HOME", root.join("home"));
+        let (dir, show) = crate::create_show(&root.join("show"), Some("Envelope")).unwrap();
+        let v = mutation_json(&dir, &show, json!({ "brief": "neon" }));
+        assert_eq!(v["ok"], true);
+        assert_eq!(v["show"], dir.display().to_string());
+        assert_eq!(v["show_id"], show.id);
+        assert_eq!(v["rev"], show.rev);
+        assert!(v["event_id"].as_str().is_some());
+        assert_eq!(v["who"], "human");
+        assert_eq!(v["school"]["enabled"], false);
+        assert_eq!(v["brief"], "neon");
+    }
+
+    #[test]
+    fn mutation_json_leans_shots_unless_detail_full() {
+        let stamp = std::process::id();
+        let root = std::env::temp_dir().join(format!("lot-audit-lean-{stamp}"));
+        let _ = fs::remove_dir_all(&root);
+        std::env::set_var("LOT_HOME", root.join("home"));
+        let (dir, show) = crate::create_show(&root.join("show"), Some("Lean")).unwrap();
+        let extra = json!({
+            "shots": [{
+                "id": "sh-01",
+                "num": "01",
+                "name": "INT. TENT - NIGHT",
+                "size": "WIDE",
+                "locked": false,
+                "prompt": "wide tent, neon rain",
+                "prompt_targets": { "kling": "do not dump" },
+                "stage_marks": [{ "who": "Ada" }]
+            }]
+        });
+        crate::clear_detail();
+        let lean = mutation_json(&dir, &show, extra.clone());
+        assert_eq!(lean["shots"][0]["num"], "01");
+        assert!(lean["shots"][0].get("prompt").is_none(), "{lean}");
+        assert_eq!(lean["shots"][0]["marks"], 1);
+        crate::with_detail(true, || {
+            let full = mutation_json(&dir, &show, extra);
+            assert_eq!(full["shots"][0]["prompt"], "wide tent, neon rain");
+        });
     }
 }
