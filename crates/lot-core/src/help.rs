@@ -8,7 +8,7 @@ pub fn help_spec() -> Value {
         "version": crate::VERSION,
         "door": ["cli", "mcp"],
         "school_default": "off",
-        "notice": "Flags only. No TTY prompts. Exit 0 = ok. Do not click folder dialogs. --agent / LOT_AGENT / MCP agent: who writes (unset = human, no auto-claim). --cap / LOT_CAP / MCP cap: read|write|render|export|spend (unset = all). Jail = this show.lot + LOT_MEDIA_ROOTS; fountain is scene text (AC-013). Show budget: lot budget --spend/--render (hit cap → stop).",
+        "notice": "Flags only. No TTY prompts. Exit 0 = ok. Do not click folder dialogs. --agent / LOT_AGENT / MCP agent: who writes (unset = human, no auto-claim). --cap / LOT_CAP / MCP cap: read|write|render|export|spend (unset = all). Jail = this show.lot + LOT_MEDIA_ROOTS; fountain is scene text (AC-013). Show budget: lot budget --spend/--render (hit cap → stop). Mutating --json / MCP returns {ok, show, show_id, rev, event_id, who, school}.",
         "verbs": [
             verb("lot status", "lot_status", "kernel", "First call. Kernel + current show."),
             verb("lot create <dir> --name", "lot_create", "kernel", "Create a show.lot and make it current."),
@@ -106,6 +106,11 @@ mod tests {
             assert!(mcps.contains(&n), "missing {n} in {mcps:?}");
         }
         assert_eq!(v["school_default"], "off");
+        let notice = v["notice"].as_str().unwrap();
+        assert!(
+            notice.contains("show_id") && notice.contains("event_id"),
+            "help notice must name the mutation envelope: {notice}"
+        );
     }
 }
 
