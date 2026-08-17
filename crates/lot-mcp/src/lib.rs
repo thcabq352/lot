@@ -93,7 +93,7 @@ fn tools() -> Value {
         },
         {
             "name": "lot_writer_draft",
-            "description": "Write screenplay.fountain outline stub from the brief. Not a Grok draft yet.",
+            "description": "Write screenplay.fountain from the brief via Grok (xAI OAuth) or local OpenAI-compat. Errors if no brain.",
             "inputSchema": { "type": "object", "properties": {} }
         }
     ])
@@ -171,6 +171,7 @@ fn call(params: Option<&Value>) -> Value {
                 "show": dir.display().to_string(),
                 "rev": show.rev,
                 "draft": show.writer.draft_path,
+                "provenance": show.writer.draft_provenance,
             })),
             Err(e) => tool_err(&e.to_string()),
         },
@@ -236,6 +237,7 @@ mod tests {
         assert!(names.contains(&"lot_create"));
         assert!(names.contains(&"lot_open"));
         assert!(names.contains(&"lot_writer_brief"));
+        assert!(names.contains(&"lot_writer_draft"));
     }
 
     #[test]

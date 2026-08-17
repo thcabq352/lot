@@ -28,7 +28,7 @@ enum Cmd {
     },
     /// Open an existing show.lot and make it current.
     Open { path: PathBuf },
-    /// Writer: brief + outline stub (Grok draft not wired).
+    /// Writer: brief + real fountain draft (Grok OAuth → local → error).
     Writer {
         #[command(subcommand)]
         cmd: WriterCmd,
@@ -44,7 +44,7 @@ enum WriterCmd {
         #[arg(long)]
         text: String,
     },
-    /// Write screenplay.fountain outline stub from the brief.
+    /// Write screenplay.fountain via Grok (xAI OAuth) or local OpenAI-compat.
     Draft,
 }
 
@@ -122,15 +122,22 @@ fn main() -> ExitCode {
                                 "show": dir.display().to_string(),
                                 "rev": show.rev,
                                 "draft": show.writer.draft_path,
+                                "provenance": show.writer.draft_provenance,
                             })
                         );
                     } else {
-                        println!(
-                            "draft {}",
-                            show.writer
-                                .draft_path
-                                .unwrap_or_else(|| dir.display().to_string())
-                        );
+                        let path = show
+                            .writer
+                            .draft_path
+                            .unwrap_or_else(|| dir.display().to_string());
+                        if let Some(p) = show.writer.draft_provenance {
+                            println!(
+                                "draft {}  backend={} model={} auth={}",
+                                path, p.backend, p.model, p.auth
+                            );
+                        } else {
+                            println!("draft {path}");
+                        }
                     }
                     ExitCode::SUCCESS
                 }

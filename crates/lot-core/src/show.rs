@@ -74,6 +74,9 @@ pub struct Writer {
     pub locked: bool,
     #[serde(default)]
     pub draft_path: Option<String>,
+    /// Last successful draft brain (backend/model/base_url/auth). Never a secret.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub draft_provenance: Option<crate::Provenance>,
 }
 
 impl Show {
@@ -170,24 +173,39 @@ pub fn set_brief(text: &str) -> Result<(PathBuf, Show), ShowError> {
 
 pub fn draft_screenplay() -> Result<(PathBuf, Show), ShowError> {
     let (dir, mut show) = require_current()?;
+    if show.writer.locked {
+        return Err(ShowError::Msg(
+            "writer locked — unlock before drafting".into(),
+        ));
+    }
     if show.writer.brief.trim().is_empty() {
         return Err(ShowError::Msg(
             "no brief — lot writer brief --text \"...\"".into(),
         ));
     }
-    let fountain = format!(
-        "Title: {}\nCredit: Written by\nAuthor: Lot Writer (outline stub — Grok draft not wired)\nDraft date: {}\n\n= BRIEF\n\n{}\n\nFADE IN:\n\nINT. LOT - DAY\n\nAn outline waits for a real draft. The brief is locked in show.json.\n\nFADE OUT.\n",
-        show.name,
-        show.updated_at,
-        show.writer.brief.trim()
-    );
+    // Real brain only. No fake INT. LOT outline stub.
+    let completion = crate::brain::draft_fountain(&show.name, show.writer.brief.trim())?;
+    let mut fountain = completion.text;
+    if !fountain.ends_with('\n') {
+        fountain.push('\n');
+    }
     let path = dir.join("screenplay.fountain");
-    fs::write(&path, fountain)?;
+    fs::write(&path, &fountain)?;
     show.writer.draft_path = Some(path.display().to_string());
+    show.writer.draft_provenance = Some(completion.provenance);
     show.rev += 1;
     show.updated_at = now_rfc3339();
     write_show(&dir, &show)?;
-    append_event(&dir, "writer.draft", &show)?;
+    append_event_with(
+        &dir,
+        "writer.draft",
+        &show,
+        Some(serde_json::json!({
+            "backend": show.writer.draft_provenance.as_ref().map(|p| &p.backend),
+            "model": show.writer.draft_provenance.as_ref().map(|p| &p.model),
+            "auth": show.writer.draft_provenance.as_ref().map(|p| &p.auth),
+        })),
+    )?;
     Ok((dir, show))
 }
 
@@ -201,17 +219,33 @@ fn write_show(dir: &Path, show: &Show) -> Result<(), ShowError> {
 }
 
 fn append_event(dir: &Path, kind: &str, show: &Show) -> Result<(), ShowError> {
+    append_event_with(dir, kind, show, None)
+}
+
+fn append_event_with(
+    dir: &Path,
+    kind: &str,
+    show: &Show,
+    extra: Option<serde_json::Value>,
+) -> Result<(), ShowError> {
     let path = dir.join("events.jsonl");
     let mut f = fs::OpenOptions::new()
         .create(true)
         .append(true)
         .open(path)?;
-    let line = serde_json::json!({
+    let mut line = serde_json::json!({
         "at": now_rfc3339(),
         "kind": kind,
         "rev": show.rev,
         "show_id": show.id,
     });
+    if let Some(serde_json::Value::Object(map)) = extra {
+        if let Some(obj) = line.as_object_mut() {
+            for (k, v) in map {
+                obj.insert(k, v);
+            }
+        }
+    }
     writeln!(f, "{line}")?;
     Ok(())
 }

@@ -8,3 +8,4 @@ description = "Lot kernel: status, schema, no GUI."
 [dependencies]
 serde = { workspace = true }
 serde_json = { workspace = true }
+ureq = { version = "2", features = ["json"] }

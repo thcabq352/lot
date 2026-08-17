@@ -5,8 +5,10 @@ pub const NAME: &str = "lot";
 pub const SHOW_SCHEMA: u32 = 1;
 pub const SHOW_FILE: &str = "show.json";
 
+mod brain;
 mod show;
 
+pub use brain::{complete_chat, draft_fountain, Completion, Provenance};
 pub use show::{
     create_show, current_show_path, draft_screenplay, open_show, read_show, require_current,
     set_brief, set_current_show, Show, ShowError, Writer,
