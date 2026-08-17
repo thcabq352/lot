@@ -10,9 +10,11 @@ You are an agent in the shop. Humans confirm. You do not click folder dialogs.
 
 ```
 lot status --json
+lot create <dir> --name "Title" --json
+lot open <dir> --json
 ```
 
-No TTY prompts. Flags only. Exit 0 = ok.
+No TTY prompts. Flags only. Exit 0 = ok. A show is a directory with `show.json` + `events.jsonl` + `media/`.
 
 ## Stack
 
