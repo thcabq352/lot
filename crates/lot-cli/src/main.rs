@@ -868,12 +868,16 @@ fn main() -> ExitCode {
             }
             match cmd {
                 CutCmd::Export => match dailies_export() {
-                    Ok((dir, show, file)) => ok_writer(
+                    Ok((dir, show, report)) => ok_writer(
                         cli.json,
                         &dir,
                         &show,
-                        serde_json::json!({ "export": file.display().to_string() }),
-                        &format!("cut export {}", file.display()),
+                        serde_json::json!({
+                            "export": report.file.display().to_string(),
+                            "takes": report.takes,
+                            "resumed": report.resumed
+                        }),
+                        &format!("cut export {}", report.file.display()),
                     ),
                     Err(e) => fail(cli.json, &e.to_string()),
                 },
@@ -1192,12 +1196,16 @@ fn dailies_cmd(cmd: DailiesCmd, json: bool) -> ExitCode {
             Err(e) => fail(json, &e.to_string()),
         },
         DailiesCmd::Export => match dailies_export() {
-            Ok((dir, show, file)) => ok_writer(
+            Ok((dir, show, report)) => ok_writer(
                 json,
                 &dir,
                 &show,
-                serde_json::json!({ "export": file.display().to_string() }),
-                &format!("exported {}", file.display()),
+                serde_json::json!({
+                    "export": report.file.display().to_string(),
+                    "takes": report.takes,
+                    "resumed": report.resumed
+                }),
+                &format!("exported {}", report.file.display()),
             ),
             Err(e) => fail(json, &e.to_string()),
         },
