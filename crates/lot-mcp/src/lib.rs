@@ -55,6 +55,10 @@ fn path_prop() -> Value {
     json!({ "type": "string", "description": "Optional show.lot directory. Opens it, then runs. Omit to keep current." })
 }
 
+fn cap_prop() -> Value {
+    json!({ "type": "string", "description": "Agent caps: read | write | render | export | spend | all. Unset = all. AC-012." })
+}
+
 fn tools() -> Value {
     json!([
         {
@@ -62,7 +66,7 @@ fn tools() -> Value {
             "description": "First call. Kernel + current show. No GUI.",
             "inputSchema": {
                 "type": "object",
-                "properties": { "path": path_prop() }
+                "properties": { "path": path_prop(), "cap": cap_prop() }
             }
         },
         {
@@ -131,7 +135,7 @@ fn tools() -> Value {
         },
         {
             "name": "lot_writer_draft",
-            "description": "Write screenplay.fountain from brief + style + cast + format via Grok (xAI OAuth) or local OpenAI-compat. Errors if no brain.",
+            "description": "Write screenplay.fountain from brief + style + cast + format via Grok (xAI OAuth) or Ollama / local. Errors if no brain.",
             "inputSchema": {
                 "type": "object",
                 "properties": { "path": path_prop() }
@@ -199,6 +203,48 @@ fn tools() -> Value {
             }
         },
         {
+            "name": "lot_stage_place",
+            "description": "Place a 2D floor mark on a shot. 3D blocking stays in Blockout. Does not rename the shot.",
+            "inputSchema": {
+                "type": "object",
+                "properties": {
+                    "shot": { "type": "string" },
+                    "who": { "type": "string" },
+                    "mark": { "type": "string" },
+                    "x": { "type": "string" },
+                    "z": { "type": "string" },
+                    "notes": { "type": "string" },
+                    "kind": { "type": "string", "description": "actor | camera | prop" },
+                    "path": path_prop()
+                },
+                "required": ["shot", "who"]
+            }
+        },
+        {
+            "name": "lot_stage_camera",
+            "description": "Set the camera card on a shot (size, angle, lens, move).",
+            "inputSchema": {
+                "type": "object",
+                "properties": {
+                    "shot": { "type": "string" },
+                    "size": { "type": "string" },
+                    "angle": { "type": "string" },
+                    "lens": { "type": "string" },
+                    "move": { "type": "string" },
+                    "path": path_prop()
+                },
+                "required": ["shot"]
+            }
+        },
+        {
+            "name": "lot_stage_export",
+            "description": "Write stage/block.json from 2D marks. Never a fake glTF or depth pass.",
+            "inputSchema": {
+                "type": "object",
+                "properties": { "path": path_prop() }
+            }
+        },
+        {
             "name": "lot_picture_lock",
             "description": "Lock or unlock a Picture shot card. Does not rename the shot.",
             "inputSchema": {
@@ -220,9 +266,23 @@ fn tools() -> Value {
                     "shot": { "type": "string" },
                     "backend": { "type": "string", "description": "grok | comfy" },
                     "prompt": { "type": "string" },
-                    "path": path_prop()
+                    "path": path_prop(),
+                    "cap": cap_prop()
                 },
                 "required": ["shot", "backend"]
+            }
+        },
+        {
+            "name": "lot_stills_describe",
+            "description": "Look at a still, plate frame, or file. Grok vision #1 when online; Ollama VL locally. Never invent a look.",
+            "inputSchema": {
+                "type": "object",
+                "properties": {
+                    "shot": { "type": "string" },
+                    "file": { "type": "string", "description": "Optional image or plate path." },
+                    "path": path_prop()
+                },
+                "required": ["shot"]
             }
         },
         {
@@ -235,15 +295,118 @@ fn tools() -> Value {
         },
         {
             "name": "lot_slate_set",
-            "description": "Set a continuity-locked prompt on a shot.",
+            "description": "Set the Slate canon on a shot. With target, write a per-engine rewrite without replacing the canon (unless canon is empty).",
             "inputSchema": {
                 "type": "object",
                 "properties": {
                     "shot": { "type": "string" },
                     "prompt": { "type": "string" },
+                    "target": { "type": "string", "description": "ltx-2.3 | ltx-2.5 | grok | comfy | prompt-server | kling | veo | sora | seedance | hailuo | flux | midjourney | gpt-image | krea | wan | runway" },
                     "path": path_prop()
                 },
                 "required": ["shot", "prompt"]
+            }
+        },
+        {
+            "name": "lot_slate_compile",
+            "description": "Compile the Slate canon into a target dialect. Brain or LOT_PROMPT_SERVER. Never invent a rewrite if they are down.",
+            "inputSchema": {
+                "type": "object",
+                "properties": {
+                    "shot": { "type": "string" },
+                    "target": { "type": "string" },
+                    "path": path_prop()
+                },
+                "required": ["shot"]
+            }
+        },
+        {
+            "name": "lot_slate_target",
+            "description": "Set the show default Slate compile target.",
+            "inputSchema": {
+                "type": "object",
+                "properties": {
+                    "id": { "type": "string" },
+                    "path": path_prop()
+                },
+                "required": ["id"]
+            }
+        },
+        {
+            "name": "lot_slate_lora",
+            "description": "Attach a LoRA to a shot or the show (id, weight, model family).",
+            "inputSchema": {
+                "type": "object",
+                "properties": {
+                    "shot": { "type": "string" },
+                    "id": { "type": "string" },
+                    "weight": { "type": "string" },
+                    "model": { "type": "string" },
+                    "path": path_prop()
+                },
+                "required": ["id"]
+            }
+        },
+        {
+            "name": "lot_motion_plate",
+            "description": "Attach a Motion Previs plate to a shot. Does not rename the shot. Pose/depth stay in Motion Previs Studio.",
+            "inputSchema": {
+                "type": "object",
+                "properties": {
+                    "file": { "type": "string" },
+                    "shot": { "type": "string" },
+                    "mode": { "type": "string", "description": "camera_only | actor_motion | object_motion | full_scene" },
+                    "path": path_prop()
+                },
+                "required": ["file", "shot"]
+            }
+        },
+        {
+            "name": "lot_motion_marks",
+            "description": "Store camera / performance marks on a shot. No MediaPipe. No fake OpenPose.",
+            "inputSchema": {
+                "type": "object",
+                "properties": {
+                    "shot": { "type": "string" },
+                    "move": { "type": "string" },
+                    "notes": { "type": "string" },
+                    "mode": { "type": "string" },
+                    "path": path_prop()
+                },
+                "required": ["shot"]
+            }
+        },
+        {
+            "name": "lot_motion_export",
+            "description": "Write motion/previs.json + prompt.md from plates and marks.",
+            "inputSchema": {
+                "type": "object",
+                "properties": { "path": path_prop() }
+            }
+        },
+        {
+            "name": "lot_motion_analyze",
+            "description": "Probe a plate (ffprobe or LOT_MOTION_CMD). Does not invent pose/depth. Studio MCP stays the engine for OpenPose.",
+            "inputSchema": {
+                "type": "object",
+                "properties": {
+                    "shot": { "type": "string" },
+                    "path": path_prop()
+                },
+                "required": ["shot"]
+            }
+        },
+        {
+            "name": "lot_finish",
+            "description": "Optional end-of-pipeline upscale and/or FPS pickup via ffmpeg or LOT_UPSCALE_CMD. Never a stub.",
+            "inputSchema": {
+                "type": "object",
+                "properties": {
+                    "file": { "type": "string" },
+                    "upscale": { "type": "boolean" },
+                    "fps": { "type": "string" },
+                    "path": path_prop()
+                }
             }
         },
         {
@@ -265,7 +428,8 @@ fn tools() -> Value {
                 "type": "object",
                 "properties": {
                     "take": { "type": "string" },
-                    "path": path_prop()
+                    "path": path_prop(),
+                    "cap": cap_prop()
                 },
                 "required": ["take"]
             }
@@ -313,8 +477,36 @@ fn tools() -> Value {
             }
         },
         {
+            "name": "lot_snapshot",
+            "description": "Freeze show.json + fountain at the current rev. list=true lists revs.",
+            "inputSchema": {
+                "type": "object",
+                "properties": {
+                    "list": { "type": "boolean" },
+                    "path": path_prop()
+                }
+            }
+        },
+        {
+            "name": "lot_restore",
+            "description": "Restore a snapshot by rev. Later drafts do not eat earlier ones.",
+            "inputSchema": {
+                "type": "object",
+                "properties": {
+                    "rev": { "type": "integer" },
+                    "path": path_prop()
+                },
+                "required": ["rev"]
+            }
+        },
+        {
+            "name": "lot_help",
+            "description": "Machine-readable spec. The binary is the contract.",
+            "inputSchema": { "type": "object", "properties": {} }
+        },
+        {
             "name": "lot_doctor",
-            "description": "Probe ffmpeg, Comfy :8188, Grok/local, VO TTS, and LOT_SOUNDTRACK_CMD.",
+            "description": "Probe ffmpeg, Comfy, Grok, Ollama (LLM + vision), VO TTS, soundtrack, prompt server, Motion Previs, Blockout, upscale.",
             "inputSchema": { "type": "object", "properties": {} }
         }
     ])
@@ -329,6 +521,33 @@ fn call(params: Option<&Value>) -> Value {
         .and_then(|p| p.get("arguments"))
         .cloned()
         .unwrap_or(json!({}));
+    let caps = match cap_from_args(&args) {
+        Ok(c) => c,
+        Err(e) => return tool_err(&e),
+    };
+    lot_core::with_caps(caps, || dispatch(name, &args))
+}
+
+fn cap_from_args(args: &Value) -> Result<Option<lot_core::Caps>, String> {
+    let raw = if let Some(s) = args.get("cap").and_then(|v| v.as_str()) {
+        s.trim().to_string()
+    } else if let Some(arr) = args.get("cap").and_then(|v| v.as_array()) {
+        arr.iter()
+            .filter_map(|x| x.as_str())
+            .collect::<Vec<_>>()
+            .join(",")
+    } else {
+        String::new()
+    };
+    if raw.is_empty() {
+        return Ok(None);
+    }
+    lot_core::parse_caps(&raw)
+        .map(Some)
+        .map_err(|e| e.to_string())
+}
+
+fn dispatch(name: &str, args: &Value) -> Value {
     match name {
         "lot_status" => with_path(&args, || {
             let mut st = lot_core::Status::bootstrap();
@@ -539,6 +758,52 @@ fn call(params: Option<&Value>) -> Value {
                 Err(e) => tool_err(&e.to_string()),
             }
         }),
+        "lot_stage_place" => with_path(&args, || {
+            let shot = args.get("shot").and_then(|v| v.as_str()).unwrap_or("");
+            let who = args.get("who").and_then(|v| v.as_str()).unwrap_or("");
+            let mark = args.get("mark").and_then(|v| v.as_str());
+            let x = args.get("x").and_then(|v| v.as_str());
+            let z = args.get("z").and_then(|v| v.as_str());
+            let notes = args.get("notes").and_then(|v| v.as_str());
+            let kind = args.get("kind").and_then(|v| v.as_str());
+            match lot_core::stage_place(shot, who, mark, x, z, notes, kind) {
+                Ok((dir, show)) => tool_ok(&json!({
+                    "ok": true,
+                    "show": dir.display().to_string(),
+                    "rev": show.rev,
+                    "shots": show.shots,
+                })),
+                Err(e) => tool_err(&e.to_string()),
+            }
+        }),
+        "lot_stage_camera" => with_path(&args, || {
+            let shot = args.get("shot").and_then(|v| v.as_str()).unwrap_or("");
+            let size = args.get("size").and_then(|v| v.as_str());
+            let angle = args.get("angle").and_then(|v| v.as_str());
+            let lens = args.get("lens").and_then(|v| v.as_str());
+            let mv = args
+                .get("move")
+                .or_else(|| args.get("move_kind"))
+                .and_then(|v| v.as_str());
+            match lot_core::stage_camera(shot, size, angle, lens, mv) {
+                Ok((dir, show)) => tool_ok(&json!({
+                    "ok": true,
+                    "show": dir.display().to_string(),
+                    "rev": show.rev,
+                    "shots": show.shots,
+                })),
+                Err(e) => tool_err(&e.to_string()),
+            }
+        }),
+        "lot_stage_export" => with_path(&args, || match lot_core::stage_export() {
+            Ok((dir, show, file)) => tool_ok(&json!({
+                "ok": true,
+                "show": dir.display().to_string(),
+                "rev": show.rev,
+                "export": file.display().to_string(),
+            })),
+            Err(e) => tool_err(&e.to_string()),
+        }),
         "lot_picture_lock" => with_path(&args, || {
             let shot = args.get("shot").and_then(|v| v.as_str()).unwrap_or("");
             let locked = args.get("locked").and_then(|v| v.as_bool()).unwrap_or(true);
@@ -567,6 +832,19 @@ fn call(params: Option<&Value>) -> Value {
                 Err(e) => tool_err(&e.to_string()),
             }
         }),
+        "lot_stills_describe" => with_path(&args, || {
+            let shot = args.get("shot").and_then(|v| v.as_str()).unwrap_or("");
+            let file = args.get("file").and_then(|v| v.as_str()).map(Path::new);
+            match lot_core::stills_describe(shot, file) {
+                Ok((dir, show)) => tool_ok(&json!({
+                    "ok": true,
+                    "show": dir.display().to_string(),
+                    "rev": show.rev,
+                    "shots": show.shots,
+                })),
+                Err(e) => tool_err(&e.to_string()),
+            }
+        }),
         "lot_board_export" => with_path(&args, || match lot_core::board_export() {
             Ok((dir, show, file)) => tool_ok(&json!({
                 "ok": true,
@@ -579,11 +857,129 @@ fn call(params: Option<&Value>) -> Value {
         "lot_slate_set" => with_path(&args, || {
             let shot = args.get("shot").and_then(|v| v.as_str()).unwrap_or("");
             let prompt = args.get("prompt").and_then(|v| v.as_str()).unwrap_or("");
-            match lot_core::slate_set(shot, prompt) {
+            let target = args.get("target").and_then(|v| v.as_str());
+            match lot_core::slate_set(shot, prompt, target) {
                 Ok((dir, show)) => tool_ok(&json!({
                     "ok": true,
                     "show": dir.display().to_string(),
                     "rev": show.rev,
+                    "shots": show.shots,
+                })),
+                Err(e) => tool_err(&e.to_string()),
+            }
+        }),
+        "lot_slate_compile" => with_path(&args, || {
+            let shot = args.get("shot").and_then(|v| v.as_str()).unwrap_or("");
+            let target = args.get("target").and_then(|v| v.as_str());
+            match lot_core::slate_compile(shot, target) {
+                Ok((dir, show)) => tool_ok(&json!({
+                    "ok": true,
+                    "show": dir.display().to_string(),
+                    "rev": show.rev,
+                    "shots": show.shots,
+                    "slate": show.slate,
+                })),
+                Err(e) => tool_err(&e.to_string()),
+            }
+        }),
+        "lot_slate_target" => with_path(&args, || {
+            let id = args.get("id").and_then(|v| v.as_str()).unwrap_or("");
+            match lot_core::slate_target(id) {
+                Ok((dir, show)) => tool_ok(&json!({
+                    "ok": true,
+                    "show": dir.display().to_string(),
+                    "rev": show.rev,
+                    "slate": show.slate,
+                })),
+                Err(e) => tool_err(&e.to_string()),
+            }
+        }),
+        "lot_slate_lora" => with_path(&args, || {
+            let shot = args.get("shot").and_then(|v| v.as_str());
+            let id = args.get("id").and_then(|v| v.as_str()).unwrap_or("");
+            let weight = args.get("weight").and_then(|v| v.as_str());
+            let model = args.get("model").and_then(|v| v.as_str());
+            match lot_core::slate_lora(shot, id, weight, model) {
+                Ok((dir, show)) => tool_ok(&json!({
+                    "ok": true,
+                    "show": dir.display().to_string(),
+                    "rev": show.rev,
+                    "slate": show.slate,
+                    "shots": show.shots,
+                })),
+                Err(e) => tool_err(&e.to_string()),
+            }
+        }),
+        "lot_motion_plate" => with_path(&args, || {
+            let file = args.get("file").and_then(|v| v.as_str()).unwrap_or("");
+            let shot = args.get("shot").and_then(|v| v.as_str()).unwrap_or("");
+            let mode = args.get("mode").and_then(|v| v.as_str());
+            if file.is_empty() {
+                return tool_err("file is required");
+            }
+            match lot_core::motion_plate(Path::new(file), shot, mode) {
+                Ok((dir, show)) => tool_ok(&json!({
+                    "ok": true,
+                    "show": dir.display().to_string(),
+                    "rev": show.rev,
+                    "shots": show.shots,
+                })),
+                Err(e) => tool_err(&e.to_string()),
+            }
+        }),
+        "lot_motion_marks" => with_path(&args, || {
+            let shot = args.get("shot").and_then(|v| v.as_str()).unwrap_or("");
+            let mv = args
+                .get("move")
+                .or_else(|| args.get("move_kind"))
+                .and_then(|v| v.as_str());
+            let notes = args.get("notes").and_then(|v| v.as_str());
+            let mode = args.get("mode").and_then(|v| v.as_str());
+            match lot_core::motion_marks(shot, mv, notes, mode) {
+                Ok((dir, show)) => tool_ok(&json!({
+                    "ok": true,
+                    "show": dir.display().to_string(),
+                    "rev": show.rev,
+                    "shots": show.shots,
+                })),
+                Err(e) => tool_err(&e.to_string()),
+            }
+        }),
+        "lot_motion_export" => with_path(&args, || match lot_core::motion_export() {
+            Ok((dir, show, file)) => tool_ok(&json!({
+                "ok": true,
+                "show": dir.display().to_string(),
+                "rev": show.rev,
+                "export": file.display().to_string(),
+            })),
+            Err(e) => tool_err(&e.to_string()),
+        }),
+        "lot_motion_analyze" => with_path(&args, || {
+            let shot = args.get("shot").and_then(|v| v.as_str()).unwrap_or("");
+            match lot_core::motion_analyze(shot) {
+                Ok((dir, show)) => tool_ok(&json!({
+                    "ok": true,
+                    "show": dir.display().to_string(),
+                    "rev": show.rev,
+                    "shots": show.shots,
+                })),
+                Err(e) => tool_err(&e.to_string()),
+            }
+        }),
+        "lot_finish" => with_path(&args, || {
+            let file = args.get("file").and_then(|v| v.as_str()).map(Path::new);
+            let upscale = args
+                .get("upscale")
+                .and_then(|v| v.as_bool())
+                .unwrap_or(false);
+            let fps = args.get("fps").and_then(|v| v.as_str());
+            match lot_core::finish_pickup(file, upscale, fps) {
+                Ok((dir, show, out)) => tool_ok(&json!({
+                    "ok": true,
+                    "show": dir.display().to_string(),
+                    "rev": show.rev,
+                    "finish": show.finish,
+                    "file": out.display().to_string(),
                 })),
                 Err(e) => tool_err(&e.to_string()),
             }
@@ -658,6 +1054,46 @@ fn call(params: Option<&Value>) -> Value {
                 Err(e) => tool_err(&e.to_string()),
             }
         }),
+        "lot_snapshot" => with_path(&args, || {
+            let list = args.get("list").and_then(|v| v.as_bool()).unwrap_or(false);
+            if list {
+                return match lot_core::snapshot_list() {
+                    Ok((dir, show, revs)) => tool_ok(&json!({
+                        "ok": true,
+                        "show": dir.display().to_string(),
+                        "rev": show.rev,
+                        "revs": revs,
+                    })),
+                    Err(e) => tool_err(&e.to_string()),
+                };
+            }
+            match lot_core::snapshot_show() {
+                Ok((dir, show, dest, rev)) => tool_ok(&json!({
+                    "ok": true,
+                    "show": dir.display().to_string(),
+                    "rev": show.rev,
+                    "snapshot_rev": rev,
+                    "snapshot": dest.display().to_string(),
+                })),
+                Err(e) => tool_err(&e.to_string()),
+            }
+        }),
+        "lot_restore" => with_path(&args, || {
+            let rev = args.get("rev").and_then(|v| v.as_u64()).unwrap_or(0);
+            if rev == 0 {
+                return tool_err("rev is required");
+            }
+            match lot_core::restore_show(rev) {
+                Ok((dir, show)) => tool_ok(&json!({
+                    "ok": true,
+                    "show": dir.display().to_string(),
+                    "rev": show.rev,
+                    "from_rev": rev,
+                })),
+                Err(e) => tool_err(&e.to_string()),
+            }
+        }),
+        "lot_help" => tool_ok(&lot_core::help_spec()),
         "lot_doctor" => {
             let d = lot_core::Doctor::probe();
             match serde_json::to_value(&d) {
@@ -778,8 +1214,24 @@ mod tests {
             "lot_writer_unlock",
             "lot_breakdown_import",
             "lot_breakdown_parse",
+            "lot_stage_place",
+            "lot_stage_camera",
+            "lot_stage_export",
+            "lot_snapshot",
+            "lot_restore",
+            "lot_help",
             "lot_stills_generate",
+            "lot_stills_describe",
             "lot_board_export",
+            "lot_slate_set",
+            "lot_slate_compile",
+            "lot_slate_target",
+            "lot_slate_lora",
+            "lot_motion_plate",
+            "lot_motion_marks",
+            "lot_motion_export",
+            "lot_motion_analyze",
+            "lot_finish",
             "lot_dailies_ingest",
             "lot_dailies_circle",
             "lot_dailies_export",

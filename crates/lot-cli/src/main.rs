@@ -1,9 +1,12 @@
 use clap::{Parser, Subcommand};
 use lot_core::{
     board_export, breakdown_parse, breakdown_summary, create_show, dailies_circle, dailies_export,
-    dailies_ingest, draft_screenplay, lock_writer, open_show, picture_lock, replace_cast_json,
-    revise_screenplay, set_brief, set_style, slate_set, stems_soundtrack, stems_vo,
-    stills_generate, unlock_writer, upsert_cast, wall_add, Doctor, Status,
+    dailies_ingest, draft_screenplay, finish_pickup, help_plain, help_spec, lock_writer,
+    motion_analyze, motion_export, motion_marks, motion_plate, open_show, picture_lock,
+    replace_cast_json, restore_show, revise_screenplay, set_brief, set_style, slate_compile,
+    slate_lora, slate_set, slate_target, snapshot_list, snapshot_show, stage_camera, stage_export,
+    stage_place, stems_soundtrack, stems_vo, stills_describe, stills_generate, unlock_writer,
+    upsert_cast, wall_add, Doctor, Status,
 };
 use std::path::{Path, PathBuf};
 use std::process::ExitCode;
@@ -12,7 +15,8 @@ use std::process::ExitCode;
 #[command(
     name = "lot",
     version,
-    about = "Lot — agent-first film tools. Stdio first, GUI last."
+    about = "Lot — agent-first film tools. Stdio first, GUI last.",
+    disable_help_subcommand = true
 )]
 struct Cli {
     #[arg(long, global = true, default_value_t = false)]
@@ -20,6 +24,9 @@ struct Cli {
     /// Open this show.lot, then run. Omit to keep the current pointer.
     #[arg(long, global = true)]
     show: Option<PathBuf>,
+    /// Agent caps: read | write | render | export | spend | all. Repeat or comma-separate. Unset = all.
+    #[arg(long = "cap", global = true)]
+    cap: Vec<String>,
     #[command(subcommand)]
     cmd: Option<Cmd>,
 }
@@ -56,6 +63,11 @@ enum Cmd {
         #[command(subcommand)]
         cmd: PictureCmd,
     },
+    /// Stage: 2D floor marks + camera card. 3D stays in Blockout.
+    Stage {
+        #[command(subcommand)]
+        cmd: StageCmd,
+    },
     /// Stills: Grok Imagine or local Comfy. --backend required. No silent swap.
     Stills {
         #[command(subcommand)]
@@ -70,6 +82,20 @@ enum Cmd {
     Slate {
         #[command(subcommand)]
         cmd: SlateCmd,
+    },
+    /// Motion Previs: plates → marks. Pose/depth stay in Motion Previs Studio.
+    Motion {
+        #[command(subcommand)]
+        cmd: MotionCmd,
+    },
+    /// Optional end-of-pipeline upscale + FPS pickup. Never a stub.
+    Finish {
+        #[arg(long)]
+        file: Option<PathBuf>,
+        #[arg(long, default_value_t = false)]
+        upscale: bool,
+        #[arg(long)]
+        fps: Option<String>,
     },
     /// Dailies (Circle Take): ingest, circle, FCPXML.
     Dailies {
@@ -86,6 +112,18 @@ enum Cmd {
         #[command(subcommand)]
         cmd: CutCmd,
     },
+    /// Freeze show.json + fountain at the current rev.
+    Snapshot {
+        #[arg(long, default_value_t = false)]
+        list: bool,
+    },
+    /// Restore a snapshot. Later drafts do not eat earlier ones.
+    Restore {
+        #[arg(long)]
+        rev: u64,
+    },
+    /// Machine-readable spec. lot help --json is the contract.
+    Help,
     /// Runtime probes (ffmpeg / Comfy / brains). No GUI.
     Doctor,
     /// Native agent door (stdio MCP).
@@ -124,7 +162,7 @@ enum WriterCmd {
         #[arg(long = "from-json")]
         from_json: Option<String>,
     },
-    /// Write screenplay.fountain via Grok (xAI OAuth) or local OpenAI-compat.
+    /// Write screenplay.fountain via Grok (xAI OAuth) or Ollama / local.
     Draft,
     /// Revise the existing screenplay.fountain. Fails if no draft.
     Revise {
@@ -173,6 +211,42 @@ enum PictureCmd {
 }
 
 #[derive(Subcommand)]
+enum StageCmd {
+    /// Place a 2D floor mark. Does not rename the shot.
+    Place {
+        #[arg(long)]
+        shot: String,
+        #[arg(long)]
+        who: String,
+        #[arg(long)]
+        mark: Option<String>,
+        #[arg(long)]
+        x: Option<String>,
+        #[arg(long)]
+        z: Option<String>,
+        #[arg(long)]
+        notes: Option<String>,
+        #[arg(long)]
+        kind: Option<String>,
+    },
+    /// Set the camera card on a shot.
+    Camera {
+        #[arg(long)]
+        shot: String,
+        #[arg(long)]
+        size: Option<String>,
+        #[arg(long)]
+        angle: Option<String>,
+        #[arg(long)]
+        lens: Option<String>,
+        #[arg(long = "move")]
+        move_kind: Option<String>,
+    },
+    /// Write stage/block.json + prompt.md. Never a fake glTF.
+    Export,
+}
+
+#[derive(Subcommand)]
 enum StillsCmd {
     /// Generate one still. Backend is grok or comfy — never swapped.
     Generate {
@@ -182,6 +256,13 @@ enum StillsCmd {
         backend: String,
         #[arg(long)]
         prompt: Option<String>,
+    },
+    /// Look at a still / plate / --file. Grok vision or Ollama VL. No invented look.
+    Describe {
+        #[arg(long)]
+        shot: String,
+        #[arg(long)]
+        file: Option<PathBuf>,
     },
 }
 
@@ -193,11 +274,68 @@ enum BoardCmd {
 
 #[derive(Subcommand)]
 enum SlateCmd {
+    /// Set the Slate canon (or a per-target rewrite with --target).
     Set {
         #[arg(long)]
         shot: String,
         #[arg(long)]
         prompt: String,
+        #[arg(long)]
+        target: Option<String>,
+    },
+    /// Compile the canon into a target dialect (kling, veo, ltx-2.5, prompt-server, …).
+    Compile {
+        #[arg(long)]
+        shot: String,
+        #[arg(long)]
+        target: Option<String>,
+    },
+    /// Attach a LoRA to a shot or the show.
+    Lora {
+        #[arg(long)]
+        shot: Option<String>,
+        #[arg(long)]
+        id: String,
+        #[arg(long)]
+        weight: Option<String>,
+        #[arg(long)]
+        model: Option<String>,
+    },
+    /// Default compile target for the show.
+    Target {
+        #[arg(long)]
+        id: String,
+    },
+}
+
+#[derive(Subcommand)]
+enum MotionCmd {
+    /// Attach a reference plate to a shot. Does not rename the shot.
+    Plate {
+        #[arg(long)]
+        file: PathBuf,
+        #[arg(long)]
+        shot: String,
+        #[arg(long)]
+        mode: Option<String>,
+    },
+    /// Store camera / performance marks (no MediaPipe).
+    Marks {
+        #[arg(long)]
+        shot: String,
+        #[arg(long = "move")]
+        move_kind: Option<String>,
+        #[arg(long)]
+        notes: Option<String>,
+        #[arg(long)]
+        mode: Option<String>,
+    },
+    /// Write motion/previs.json + prompt.md. Never a fake OpenPose bundle.
+    Export,
+    /// Probe the plate (ffprobe / LOT_MOTION_CMD). Studio pose stays in Motion Previs.
+    Analyze {
+        #[arg(long)]
+        shot: String,
     },
 }
 
@@ -245,6 +383,12 @@ enum StemsCmd {
 
 fn main() -> ExitCode {
     let cli = Cli::parse();
+    if !cli.cap.is_empty() {
+        match lot_core::parse_caps(&cli.cap.join(",")) {
+            Ok(c) => lot_core::set_caps(c),
+            Err(e) => return fail(cli.json, &e.to_string()),
+        }
+    }
     match cli.cmd.unwrap_or(Cmd::Status) {
         Cmd::Status => {
             if let Some(code) = apply_show(cli.show.as_deref(), cli.json) {
@@ -344,6 +488,7 @@ fn main() -> ExitCode {
                                     "prompt": s.prompt,
                                     "still": s.still_path,
                                     "backend": s.still_backend,
+                                    "provenance": s.still_provenance,
                                 })
                             }).collect::<Vec<_>>()
                         }),
@@ -351,6 +496,27 @@ fn main() -> ExitCode {
                     ),
                     Err(e) => fail(cli.json, &e.to_string()),
                 },
+                StillsCmd::Describe { shot, file } => {
+                    match stills_describe(&shot, file.as_deref()) {
+                        Ok((dir, show)) => ok_writer(
+                            cli.json,
+                            &dir,
+                            &show,
+                            serde_json::json!({
+                                "shots": show.shots.iter().map(|s| {
+                                    serde_json::json!({
+                                        "num": s.num,
+                                        "name": s.name,
+                                        "desc": s.desc,
+                                        "still": s.still_path,
+                                    })
+                                }).collect::<Vec<_>>()
+                            }),
+                            "still described",
+                        ),
+                        Err(e) => fail(cli.json, &e.to_string()),
+                    }
+                }
             }
         }
         Cmd::Board { cmd } => {
@@ -389,21 +555,204 @@ fn main() -> ExitCode {
                 Err(e) => fail(cli.json, &e.to_string()),
             }
         }
-        Cmd::Slate { cmd } => {
+        Cmd::Stage { cmd } => {
             if let Some(code) = apply_show(cli.show.as_deref(), cli.json) {
                 return code;
             }
             match cmd {
-                SlateCmd::Set { shot, prompt } => match slate_set(&shot, &prompt) {
+                StageCmd::Place {
+                    shot,
+                    who,
+                    mark,
+                    x,
+                    z,
+                    notes,
+                    kind,
+                } => match stage_place(
+                    &shot,
+                    &who,
+                    mark.as_deref(),
+                    x.as_deref(),
+                    z.as_deref(),
+                    notes.as_deref(),
+                    kind.as_deref(),
+                ) {
                     Ok((dir, show)) => ok_writer(
                         cli.json,
                         &dir,
                         &show,
                         serde_json::json!({ "shots": show.shots }),
+                        &format!("stage place {who} on shot {shot}"),
+                    ),
+                    Err(e) => fail(cli.json, &e.to_string()),
+                },
+                StageCmd::Camera {
+                    shot,
+                    size,
+                    angle,
+                    lens,
+                    move_kind,
+                } => match stage_camera(
+                    &shot,
+                    size.as_deref(),
+                    angle.as_deref(),
+                    lens.as_deref(),
+                    move_kind.as_deref(),
+                ) {
+                    Ok((dir, show)) => ok_writer(
+                        cli.json,
+                        &dir,
+                        &show,
+                        serde_json::json!({ "shots": show.shots }),
+                        &format!("stage camera on shot {shot}"),
+                    ),
+                    Err(e) => fail(cli.json, &e.to_string()),
+                },
+                StageCmd::Export => match stage_export() {
+                    Ok((dir, show, file)) => ok_writer(
+                        cli.json,
+                        &dir,
+                        &show,
+                        serde_json::json!({ "export": file.display().to_string() }),
+                        &format!("stage export {}", file.display()),
+                    ),
+                    Err(e) => fail(cli.json, &e.to_string()),
+                },
+            }
+        }
+        Cmd::Slate { cmd } => {
+            if let Some(code) = apply_show(cli.show.as_deref(), cli.json) {
+                return code;
+            }
+            match cmd {
+                SlateCmd::Set {
+                    shot,
+                    prompt,
+                    target,
+                } => match slate_set(&shot, &prompt, target.as_deref()) {
+                    Ok((dir, show)) => ok_writer(
+                        cli.json,
+                        &dir,
+                        &show,
+                        serde_json::json!({ "shots": show.shots, "slate": show.slate }),
                         &format!("slate set on shot {shot}"),
                     ),
                     Err(e) => fail(cli.json, &e.to_string()),
                 },
+                SlateCmd::Compile { shot, target } => {
+                    match slate_compile(&shot, target.as_deref()) {
+                        Ok((dir, show)) => ok_writer(
+                            cli.json,
+                            &dir,
+                            &show,
+                            serde_json::json!({ "shots": show.shots, "slate": show.slate }),
+                            &format!("slate compiled shot {shot}"),
+                        ),
+                        Err(e) => fail(cli.json, &e.to_string()),
+                    }
+                }
+                SlateCmd::Lora {
+                    shot,
+                    id,
+                    weight,
+                    model,
+                } => match slate_lora(shot.as_deref(), &id, weight.as_deref(), model.as_deref()) {
+                    Ok((dir, show)) => ok_writer(
+                        cli.json,
+                        &dir,
+                        &show,
+                        serde_json::json!({ "shots": show.shots, "slate": show.slate }),
+                        "slate lora set",
+                    ),
+                    Err(e) => fail(cli.json, &e.to_string()),
+                },
+                SlateCmd::Target { id } => match slate_target(&id) {
+                    Ok((dir, show)) => ok_writer(
+                        cli.json,
+                        &dir,
+                        &show,
+                        serde_json::json!({ "slate": show.slate }),
+                        &format!("slate default target {id}"),
+                    ),
+                    Err(e) => fail(cli.json, &e.to_string()),
+                },
+            }
+        }
+        Cmd::Motion { cmd } => {
+            if let Some(code) = apply_show(cli.show.as_deref(), cli.json) {
+                return code;
+            }
+            match cmd {
+                MotionCmd::Plate { file, shot, mode } => {
+                    match motion_plate(&file, &shot, mode.as_deref()) {
+                        Ok((dir, show)) => ok_writer(
+                            cli.json,
+                            &dir,
+                            &show,
+                            serde_json::json!({ "shots": show.shots }),
+                            &format!("motion plate on shot {shot}"),
+                        ),
+                        Err(e) => fail(cli.json, &e.to_string()),
+                    }
+                }
+                MotionCmd::Marks {
+                    shot,
+                    move_kind,
+                    notes,
+                    mode,
+                } => match motion_marks(
+                    &shot,
+                    move_kind.as_deref(),
+                    notes.as_deref(),
+                    mode.as_deref(),
+                ) {
+                    Ok((dir, show)) => ok_writer(
+                        cli.json,
+                        &dir,
+                        &show,
+                        serde_json::json!({ "shots": show.shots }),
+                        &format!("motion marks on shot {shot}"),
+                    ),
+                    Err(e) => fail(cli.json, &e.to_string()),
+                },
+                MotionCmd::Export => match motion_export() {
+                    Ok((dir, show, file)) => ok_writer(
+                        cli.json,
+                        &dir,
+                        &show,
+                        serde_json::json!({ "export": file.display().to_string() }),
+                        &format!("motion export {}", file.display()),
+                    ),
+                    Err(e) => fail(cli.json, &e.to_string()),
+                },
+                MotionCmd::Analyze { shot } => match motion_analyze(&shot) {
+                    Ok((dir, show)) => ok_writer(
+                        cli.json,
+                        &dir,
+                        &show,
+                        serde_json::json!({ "shots": show.shots }),
+                        &format!("motion analyze shot {shot}"),
+                    ),
+                    Err(e) => fail(cli.json, &e.to_string()),
+                },
+            }
+        }
+        Cmd::Finish { file, upscale, fps } => {
+            if let Some(code) = apply_show(cli.show.as_deref(), cli.json) {
+                return code;
+            }
+            match finish_pickup(file.as_deref(), upscale, fps.as_deref()) {
+                Ok((dir, show, out)) => ok_writer(
+                    cli.json,
+                    &dir,
+                    &show,
+                    serde_json::json!({
+                        "finish": show.finish,
+                        "file": out.display().to_string(),
+                    }),
+                    &format!("finish {}", out.display()),
+                ),
+                Err(e) => fail(cli.json, &e.to_string()),
             }
         }
         Cmd::Dailies { cmd } => {
@@ -435,20 +784,93 @@ fn main() -> ExitCode {
                 },
             }
         }
+        Cmd::Snapshot { list } => {
+            if let Some(code) = apply_show(cli.show.as_deref(), cli.json) {
+                return code;
+            }
+            if list {
+                match snapshot_list() {
+                    Ok((dir, show, revs)) => ok_writer(
+                        cli.json,
+                        &dir,
+                        &show,
+                        serde_json::json!({ "revs": revs }),
+                        &format!(
+                            "snapshots: {}",
+                            if revs.is_empty() {
+                                "none".into()
+                            } else {
+                                revs.iter()
+                                    .map(|n| n.to_string())
+                                    .collect::<Vec<_>>()
+                                    .join(", ")
+                            }
+                        ),
+                    ),
+                    Err(e) => fail(cli.json, &e.to_string()),
+                }
+            } else {
+                match snapshot_show() {
+                    Ok((dir, show, dest, rev)) => ok_writer(
+                        cli.json,
+                        &dir,
+                        &show,
+                        serde_json::json!({
+                            "rev": rev,
+                            "snapshot": dest.display().to_string(),
+                        }),
+                        &format!("snapshot rev-{rev} {}", dest.display()),
+                    ),
+                    Err(e) => fail(cli.json, &e.to_string()),
+                }
+            }
+        }
+        Cmd::Restore { rev } => {
+            if let Some(code) = apply_show(cli.show.as_deref(), cli.json) {
+                return code;
+            }
+            match restore_show(rev) {
+                Ok((dir, show)) => ok_writer(
+                    cli.json,
+                    &dir,
+                    &show,
+                    serde_json::json!({
+                        "rev": show.rev,
+                        "from_rev": rev,
+                        "brief": show.writer.brief,
+                    }),
+                    &format!("restored rev-{rev} → now rev {}", show.rev),
+                ),
+                Err(e) => fail(cli.json, &e.to_string()),
+            }
+        }
+        Cmd::Help => {
+            if cli.json {
+                println!("{}", help_spec());
+            } else {
+                print!("{}", help_plain());
+            }
+            ExitCode::SUCCESS
+        }
         Cmd::Doctor => {
             let d = Doctor::probe();
             if cli.json {
                 println!("{}", serde_json::to_string(&d).expect("doctor json"));
             } else {
                 println!(
-                    "ffmpeg={} ffprobe={} comfy={} grok={} local={} vo_tts={} soundtrack_cmd={} renderer={}",
+                    "ffmpeg={} ffprobe={} comfy={} grok={} local={} ollama={} ollama_llm={} ollama_vision={} vo_tts={} soundtrack_cmd={} prompt_server={} motion_previs={} renderer={}",
                     d.ffmpeg,
                     d.ffprobe,
                     d.comfy,
                     d.grok_configured,
                     d.local_configured,
+                    d.ollama,
+                    d.ollama_llm.as_deref().unwrap_or("-"),
+                    d.ollama_vision.as_deref().unwrap_or("-"),
                     d.vo_tts,
                     d.soundtrack_cmd,
+                    d.prompt_server,
+                    d.motion_previs,
                     d.renderer
                 );
             }
@@ -755,10 +1177,15 @@ fn print_status(json: bool) -> ExitCode {
         println!("{}", serde_json::to_string(&st).expect("status json"));
     } else {
         println!(
-            "lot {v}  school={s}  renderer={r}  show={show}",
+            "lot {v}  school={s}  renderer={r}  cap={cap}  show={show}",
             v = st.version,
             s = if st.school.enabled { "on" } else { "off" },
             r = st.renderer,
+            cap = if st.cap.is_empty() {
+                "-".into()
+            } else {
+                st.cap.join(",")
+            },
             show = st.show.as_deref().unwrap_or("-"),
         );
     }

@@ -1,0 +1,102 @@
+{
+  "reviewed": "2026-08-17",
+  "disclaimer": "Prompt envelopes for engines. Not a claim that Lightricks, xAI, ByteDance, Kuaishou, OpenAI, Google, MiniMax, Black Forest Labs, Midjourney, Krea, Alibaba, Runway, or Comfy endorsed these wordings. Influence / coverage style only.",
+  "items": [
+    {
+      "id": "ltx-2.3",
+      "label": "LTX 2.3",
+      "kind": "comfy",
+      "notes": "Rewrite as LTX 2.3 video prose. Concrete camera move, lighting, duration-aware motion. No [Shot N] wrappers. No on-screen text unless the brief asks. Continuity with the Slate canon — do not invent a new scene."
+    },
+    {
+      "id": "ltx-2.5",
+      "label": "LTX 2.5",
+      "kind": "comfy",
+      "notes": "Rewrite as LTX 2.5 video prose. Same continuity as Slate. Explicit camera, motion, and diegetic sound. No [Shot N] wrappers. No on-screen text unless the brief asks."
+    },
+    {
+      "id": "grok",
+      "label": "Grok Imagine",
+      "kind": "api",
+      "notes": "Rewrite as a single still for Grok Imagine. Photoreal cinematic, one frame, no on-screen text unless briefed. Do not describe a video timeline."
+    },
+    {
+      "id": "comfy",
+      "label": "Comfy",
+      "kind": "comfy",
+      "notes": "Rewrite for a generic local Comfy graph. Keep the Slate continuity. Concrete subject, light, lens. No workflow JSON."
+    },
+    {
+      "id": "prompt-server",
+      "label": "Prompt server",
+      "kind": "http",
+      "notes": "POST the Slate canon to LOT_PROMPT_SERVER /rewrite. Do not invent a rewrite if the server is down."
+    },
+    {
+      "id": "kling",
+      "label": "Kling",
+      "kind": "api",
+      "notes": "Rewrite as Kling video prose. One clear action, camera move named in words, lighting, and a short audio cue. No parameter keys in the prompt. Continuity with Slate — do not invent a new scene."
+    },
+    {
+      "id": "veo",
+      "label": "Veo",
+      "kind": "api",
+      "notes": "Rewrite as Veo prose: cinematography first, then subject, action, context, style. Dialogue as attributed quoted speech. No on-screen text unless briefed. Continuity with Slate."
+    },
+    {
+      "id": "sora",
+      "label": "Sora",
+      "kind": "api",
+      "notes": "Rewrite as Sora video prose. One continuous shot, concrete motion and camera, no shot-list wrappers. Continuity with Slate — do not invent a new scene."
+    },
+    {
+      "id": "seedance",
+      "label": "Seedance",
+      "kind": "api",
+      "notes": "Rewrite as Seedance video prose. Bind subjects clearly, one primary change, camera and lighting concrete. No [Shot N] unless the brief is multi-event. Continuity with Slate."
+    },
+    {
+      "id": "hailuo",
+      "label": "Hailuo / MiniMax",
+      "kind": "api",
+      "notes": "Rewrite as Hailuo/MiniMax video prose. Visual style, then action, camera vocabulary in words, diegetic sound. Continuity with Slate — do not invent a new scene."
+    },
+    {
+      "id": "flux",
+      "label": "Flux",
+      "kind": "api",
+      "notes": "Rewrite as Flux still/video prose: subject, location, style, camera, lighting. Short and specific. Continuity with Slate. No workflow JSON."
+    },
+    {
+      "id": "midjourney",
+      "label": "Midjourney",
+      "kind": "api",
+      "notes": "Rewrite as Midjourney still prose. Subject and light first, then lens and mood. No --flags unless the filmmaker wrote them. Continuity with Slate. One frame, not a timeline."
+    },
+    {
+      "id": "gpt-image",
+      "label": "GPT Image",
+      "kind": "api",
+      "notes": "Rewrite as a compact labeled still brief: scene, subject, details, constraints. Instruction-style restrictions. Continuity with Slate. One frame."
+    },
+    {
+      "id": "krea",
+      "label": "Krea",
+      "kind": "api",
+      "notes": "Rewrite as Krea still/video prose. Concrete subject, light, camera. Continuity with Slate. No on-screen text unless briefed."
+    },
+    {
+      "id": "wan",
+      "label": "Wan",
+      "kind": "comfy",
+      "notes": "Rewrite as Wan video prose for local Comfy. Concrete camera, motion, lighting. No [Shot N] wrappers. Continuity with Slate."
+    },
+    {
+      "id": "runway",
+      "label": "Runway",
+      "kind": "api",
+      "notes": "Rewrite as Runway video prose. One action, named camera move, lighting. Continuity with Slate — do not invent a new scene."
+    }
+  ]
+}

@@ -8,6 +8,7 @@ const GENRES_JSON: &str = include_str!("../packs/genres.json");
 const LIVING_JSON: &str = include_str!("../packs/directors-living.json");
 const CANON_JSON: &str = include_str!("../packs/directors-canon.json");
 const FORMATS_JSON: &str = include_str!("../packs/formats.json");
+const PROMPT_TARGETS_JSON: &str = include_str!("../packs/prompt-targets.json");
 
 pub const FORMATS: &[&str] = &[
     "feature",
@@ -41,6 +42,8 @@ pub struct PackItem {
     pub name: Option<String>,
     #[serde(default)]
     pub notes: Option<String>,
+    #[serde(default)]
+    pub kind: Option<String>,
 }
 
 impl PackItem {
@@ -83,6 +86,11 @@ pub fn living_directors() -> &'static PackFile {
 pub fn canon_directors() -> &'static PackFile {
     static P: OnceLock<PackFile> = OnceLock::new();
     P.get_or_init(|| parse_pack(CANON_JSON, "directors-canon"))
+}
+
+pub fn prompt_targets() -> &'static PackFile {
+    static P: OnceLock<PackFile> = OnceLock::new();
+    P.get_or_init(|| parse_pack(PROMPT_TARGETS_JSON, "prompt-targets"))
 }
 
 pub fn formats() -> &'static PackFile {
@@ -148,6 +156,46 @@ pub fn resolve_format(raw: &str) -> Result<String, ShowError> {
     )))
 }
 
+pub fn resolve_prompt_target(raw: &str) -> Result<String, ShowError> {
+    let raw = raw.trim();
+    let key = raw.to_ascii_lowercase().replace('_', "-");
+    let canonical = match key.as_str() {
+        "ltx-2.3" | "ltx23" | "ltx2.3" | "ltx-23" => "ltx-2.3",
+        "ltx-2.5" | "ltx25" | "ltx2.5" | "ltx-25" => "ltx-2.5",
+        "grok" | "imagine" | "grok-imagine" => "grok",
+        "comfy" | "comfyui" => "comfy",
+        "prompt-server" | "server" | "ps" => "prompt-server",
+        "kling" | "kling-2" | "kling-3" | "kling2" | "kling3" => "kling",
+        "veo" | "veo-3" | "veo3" | "veo-2" | "veo2" => "veo",
+        "sora" | "sora-2" | "sora2" => "sora",
+        "seedance" | "seedance-2" | "seedance2" => "seedance",
+        "hailuo" | "minimax" | "minimax-h3" | "h3" => "hailuo",
+        "flux" | "flux-3" | "flux3" => "flux",
+        "midjourney" | "mj" => "midjourney",
+        "gpt-image" | "gpt-image-2" | "dalle" | "gptimage" => "gpt-image",
+        "krea" => "krea",
+        "wan" | "wan-2.2" | "wan22" => "wan",
+        "runway" | "gen-4" | "gen4" => "runway",
+        other => other,
+    };
+    if let Some(it) = prompt_targets()
+        .items
+        .iter()
+        .find(|it| it.id.eq_ignore_ascii_case(canonical))
+    {
+        return Ok(it.id.clone());
+    }
+    let want = prompt_targets()
+        .items
+        .iter()
+        .map(|it| it.id.as_str())
+        .collect::<Vec<_>>()
+        .join(" | ");
+    Err(ShowError::Msg(format!(
+        "unknown prompt target: {raw} (want {want})"
+    )))
+}
+
 pub fn lookup<'a>(pack: &'a PackFile, id: &str) -> Option<&'a PackItem> {
     pack.items.iter().find(|it| it.id == id)
 }
@@ -176,6 +224,7 @@ mod tests {
             ("living", living_directors()),
             ("canon", canon_directors()),
             ("formats", formats()),
+            ("prompt-targets", prompt_targets()),
         ] {
             assert!(!pack.reviewed.is_empty(), "{name} missing reviewed");
             assert!(
@@ -213,6 +262,19 @@ mod tests {
         assert_eq!(resolve_format("music-video").unwrap(), "music-video");
         assert_eq!(resolve_format("mv").unwrap(), "music-video");
         assert_eq!(resolve_format("musicvideo").unwrap(), "music-video");
+        assert_eq!(resolve_prompt_target("ltx23").unwrap(), "ltx-2.3");
+        assert_eq!(resolve_prompt_target("ltx-2.5").unwrap(), "ltx-2.5");
+        assert_eq!(resolve_prompt_target("imagine").unwrap(), "grok");
+        assert_eq!(resolve_prompt_target("ps").unwrap(), "prompt-server");
+        assert_eq!(resolve_prompt_target("kling-3").unwrap(), "kling");
+        assert_eq!(resolve_prompt_target("veo3").unwrap(), "veo");
+        assert_eq!(resolve_prompt_target("mj").unwrap(), "midjourney");
+        assert_eq!(resolve_prompt_target("minimax").unwrap(), "hailuo");
+        assert_eq!(resolve_prompt_target("seedance-2").unwrap(), "seedance");
+        assert!(resolve_prompt_target("not-a-model")
+            .unwrap_err()
+            .to_string()
+            .contains("unknown prompt target"));
         assert!(resolve_format("webisode")
             .unwrap_err()
             .to_string()

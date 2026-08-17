@@ -11,6 +11,7 @@ pub fn dailies_ingest(
     file: Option<&Path>,
     dir: Option<&Path>,
 ) -> Result<(PathBuf, Show), ShowError> {
+    crate::caps::require_write()?;
     let (show_dir, mut show) = require_current()?;
     let mut files: Vec<PathBuf> = Vec::new();
     if let Some(f) = file {
@@ -134,6 +135,7 @@ pub fn dailies_circle(take_id: &str) -> Result<(PathBuf, Show), ShowError> {
             "lot dailies circle needs --take (no GUI picker)".into(),
         ));
     }
+    crate::caps::require_write()?;
     let (dir, mut show) = require_current()?;
     let take = show
         .takes
@@ -148,6 +150,7 @@ pub fn dailies_circle(take_id: &str) -> Result<(PathBuf, Show), ShowError> {
 }
 
 pub fn dailies_export() -> Result<(PathBuf, Show, PathBuf), ShowError> {
+    crate::caps::require(crate::caps::Cap::Export)?;
     let (dir, show) = require_current()?;
     let circled: Vec<&Take> = show.takes.iter().filter(|t| t.circled).collect();
     if circled.is_empty() {

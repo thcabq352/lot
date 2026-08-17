@@ -8,6 +8,7 @@ use std::fs;
 use std::path::Path;
 
 pub fn breakdown_parse(file: Option<&Path>) -> Result<(std::path::PathBuf, Show), ShowError> {
+    crate::caps::require_write()?;
     let (dir, mut show) = require_current()?;
     let (text, filename) = if let Some(p) = file {
         let raw = fs::read_to_string(p)?;
@@ -124,6 +125,7 @@ pub fn breakdown_summary(show: &Show) -> serde_json::Value {
 }
 
 pub fn wall_add(act: Option<&str>, text: &str) -> Result<(std::path::PathBuf, Show), ShowError> {
+    crate::caps::require_write()?;
     let (dir, mut show) = require_current()?;
     let text = text.trim();
     if text.is_empty() {
@@ -143,6 +145,7 @@ pub fn wall_add(act: Option<&str>, text: &str) -> Result<(std::path::PathBuf, Sh
 }
 
 pub fn picture_lock(shot_num: &str, locked: bool) -> Result<(std::path::PathBuf, Show), ShowError> {
+    crate::caps::require_write()?;
     let (dir, mut show) = require_current()?;
     let shot = show
         .shots
@@ -153,20 +156,5 @@ pub fn picture_lock(shot_num: &str, locked: bool) -> Result<(std::path::PathBuf,
     bump(&mut show);
     write_show(&dir, &show)?;
     append_event(&dir, "picture.lock", &show)?;
-    Ok((dir, show))
-}
-
-pub fn slate_set(shot_num: &str, prompt: &str) -> Result<(std::path::PathBuf, Show), ShowError> {
-    let (dir, mut show) = require_current()?;
-    let shot = show
-        .shots
-        .iter_mut()
-        .find(|s| crate::model::shot_nums_match(&s.num, shot_num))
-        .ok_or_else(|| ShowError::Msg(format!("unknown shot: {shot_num}")))?;
-    shot.prompt = prompt.trim().to_string();
-    show.phase = "slate".into();
-    bump(&mut show);
-    write_show(&dir, &show)?;
-    append_event(&dir, "slate.set", &show)?;
     Ok((dir, show))
 }

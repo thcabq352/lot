@@ -1,7 +1,7 @@
 //! Stills: Grok Imagine or local Comfy. Backend is required. No silent swap.
 //! Board export packages stills + slate prompts. Never a fake PNG.
 
-use crate::brain::grok_auth;
+use crate::brain::{complete_vision, grok_auth};
 use crate::model::{shot_nums_match, MediaItem};
 use crate::show::{
     append_event, append_event_with, bump, require_current, write_show, Show, ShowError,
@@ -12,8 +12,76 @@ use serde_json::{json, Value};
 use std::fs;
 use std::io::Read;
 use std::path::{Path, PathBuf};
+use std::process::Command;
 use std::thread;
 use std::time::{Duration, Instant};
+
+const DESCRIBE_SYSTEM: &str = "You are Lot, looking at a production still or plate frame. \
+Describe what is actually in the image: framing, light, wardrobe, set, faces. \
+Do not invent a shot that is not in the picture. Do not wrap the answer in markdown fences.";
+
+pub const BUNDLED_COMFY_STILL: &str = "comfy-flux-still.json";
+
+fn comfy_workflow_disabled(raw: &str) -> bool {
+    let s = raw.trim();
+    s.is_empty() || s == "-" || s.eq_ignore_ascii_case("off")
+}
+
+/// Env path, or the Flux lock pack. `LOT_COMFY_WORKFLOW=off` skips the pack (tests).
+pub fn resolve_comfy_workflow() -> Result<PathBuf, ShowError> {
+    match std::env::var("LOT_COMFY_WORKFLOW") {
+        Ok(s) if comfy_workflow_disabled(&s) => Err(ShowError::Msg(
+            "no comfy stills — set LOT_COMFY_WORKFLOW to a JSON graph with {{prompt}}. Did not call Grok."
+                .into(),
+        )),
+        Ok(s) => {
+            let wf_path = s.trim().to_string();
+            let p = PathBuf::from(&wf_path);
+            if p.is_file() {
+                Ok(p)
+            } else {
+                Err(ShowError::Msg(format!(
+                    "no comfy stills — workflow not a file: {wf_path}. Did not call Grok."
+                )))
+            }
+        }
+        Err(_) => bundled_comfy_workflow().ok_or_else(|| {
+            ShowError::Msg(
+                "no comfy stills — set LOT_COMFY_WORKFLOW to a JSON graph with {{prompt}}. Did not call Grok."
+                    .into(),
+            )
+        }),
+    }
+}
+
+pub fn comfy_workflow_ready() -> bool {
+    resolve_comfy_workflow().is_ok()
+}
+
+fn bundled_comfy_workflow() -> Option<PathBuf> {
+    let mut cands = vec![PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+        .join("packs")
+        .join(BUNDLED_COMFY_STILL)];
+    if let Ok(exe) = std::env::current_exe() {
+        if let Some(dir) = exe.parent() {
+            cands.push(dir.join("packs").join(BUNDLED_COMFY_STILL));
+            cands.push(
+                dir.join("../../crates/lot-core/packs")
+                    .join(BUNDLED_COMFY_STILL),
+            );
+        }
+    }
+    if let Ok(cwd) = std::env::current_dir() {
+        let mut p = cwd;
+        for _ in 0..6 {
+            cands.push(p.join("crates/lot-core/packs").join(BUNDLED_COMFY_STILL));
+            if !p.pop() {
+                break;
+            }
+        }
+    }
+    cands.into_iter().find(|p| p.is_file())
+}
 
 pub fn resolve_stills_backend(raw: &str) -> Result<&'static str, ShowError> {
     match raw.trim().to_ascii_lowercase().as_str() {
@@ -31,19 +99,25 @@ pub fn stills_generate(
     prompt: Option<&str>,
 ) -> Result<(PathBuf, Show), ShowError> {
     let backend = resolve_stills_backend(backend)?;
+    match backend {
+        "grok" => crate::caps::require(crate::caps::Cap::Spend)?,
+        "comfy" => crate::caps::require(crate::caps::Cap::Render)?,
+        _ => crate::caps::require_write()?,
+    }
     let (dir, mut show) = require_current()?;
     let shot_i = show
         .shots
         .iter()
         .position(|s| shot_nums_match(&s.num, shot_num))
         .ok_or_else(|| ShowError::Msg(format!("unknown shot: {shot_num}")))?;
-    if let Some(p) = prompt {
-        let t = p.trim();
-        if !t.is_empty() {
-            show.shots[shot_i].prompt = t.to_string();
-        }
+    let explicit = prompt.map(str::trim).filter(|s| !s.is_empty());
+    if let Some(t) = explicit {
+        show.shots[shot_i].prompt = t.to_string();
     }
-    let text = show.shots[shot_i].prompt.trim().to_string();
+    let text = explicit
+        .map(str::to_string)
+        .filter(|s| !s.is_empty())
+        .unwrap_or_else(|| crate::slate::prompt_for_target(&show.shots[shot_i], backend));
     if text.is_empty() {
         return Err(ShowError::Msg(
             "stills needs a prompt (slate --prompt or stills --prompt)".into(),
@@ -88,12 +162,61 @@ pub fn stills_generate(
             "shot": num,
             "backend": backend,
             "still": path_s,
+            "provenance": prov,
+        })),
+    )?;
+    Ok((dir, show))
+}
+
+/// Look at a still, plate frame, or --file. Grok vision #1 when online; Ollama VL locally.
+/// Never invent a description if no vision brain answers.
+pub fn stills_describe(shot_num: &str, file: Option<&Path>) -> Result<(PathBuf, Show), ShowError> {
+    crate::caps::require_write()?;
+    let (dir, mut show) = require_current()?;
+    let shot_i = show
+        .shots
+        .iter()
+        .position(|s| shot_nums_match(&s.num, shot_num))
+        .ok_or_else(|| ShowError::Msg(format!("unknown shot: {shot_num}")))?;
+    let (bytes, mime, source) = load_look_image(&show.shots[shot_i], file)?;
+    let shot = &show.shots[shot_i];
+    let mut user = format!("Show: {}\nShot: {}", show.name, shot.num);
+    if !shot.name.is_empty() {
+        user.push_str(&format!(" ({})", shot.name));
+    }
+    user.push('\n');
+    if !shot.prompt.is_empty() {
+        user.push_str(&format!("Slate canon: {}\n", shot.prompt));
+    }
+    user.push_str("Describe this frame for the board.\n");
+    let looked = complete_vision(DESCRIBE_SYSTEM, &user, &bytes, mime)?;
+    let text = looked.text.trim().to_string();
+    if text.is_empty() {
+        return Err(ShowError::Msg(
+            "no vision — empty look. Did not invent a description.".into(),
+        ));
+    }
+    show.shots[shot_i].desc = text;
+    let num = show.shots[shot_i].num.clone();
+    bump(&mut show);
+    write_show(&dir, &show)?;
+    append_event_with(
+        &dir,
+        "stills.describe",
+        &show,
+        Some(json!({
+            "shot": num,
+            "source": source,
+            "backend": looked.provenance.backend,
+            "model": looked.provenance.model,
+            "provenance": looked.provenance,
         })),
     )?;
     Ok((dir, show))
 }
 
 pub fn board_export() -> Result<(PathBuf, Show, PathBuf), ShowError> {
+    crate::caps::require(crate::caps::Cap::Export)?;
     let (dir, mut show) = require_current()?;
     if show.shots.is_empty() {
         return Err(ShowError::Msg(
@@ -117,7 +240,11 @@ pub fn board_export() -> Result<(PathBuf, Show, PathBuf), ShowError> {
         rows.push(json!({
             "num": shot.num,
             "name": shot.name,
+            "desc": shot.desc,
             "prompt": shot.prompt,
+            "prompt_targets": shot.prompt_targets,
+            "loras": shot.loras,
+            "plate": shot.plate_path,
             "still": shot.still_path,
             "backend": shot.still_backend,
             "locked": shot.locked,
@@ -136,6 +263,9 @@ pub fn board_export() -> Result<(PathBuf, Show, PathBuf), ShowError> {
         md.push_str(&format!("## Shot {}\n\n", shot.num));
         if !shot.name.is_empty() {
             md.push_str(&format!("Name: {}\n\n", shot.name));
+        }
+        if !shot.desc.is_empty() {
+            md.push_str(&format!("Look:\n\n{}\n\n", shot.desc));
         }
         if !shot.prompt.is_empty() {
             md.push_str(&format!("Prompt:\n\n{}\n\n", shot.prompt));
@@ -156,6 +286,7 @@ pub fn board_export() -> Result<(PathBuf, Show, PathBuf), ShowError> {
 }
 
 fn generate_grok(prompt: &str) -> Result<(Vec<u8>, Provenance), ShowError> {
+    let started = Instant::now();
     let (token, base, auth) = grok_auth().ok_or_else(|| {
         ShowError::Msg(
             "no grok stills — set HERMES xai-oauth, LOT_XAI_TOKEN, or XAI_API_KEY. Did not call Comfy."
@@ -165,13 +296,19 @@ fn generate_grok(prompt: &str) -> Result<(Vec<u8>, Provenance), ShowError> {
     let model = std::env::var("LOT_STILLS_GROK_MODEL")
         .or_else(|_| std::env::var("LOT_GROK_IMAGE_MODEL"))
         .unwrap_or_else(|_| "grok-imagine-image-2.0".into());
+    let seed = std::env::var("LOT_STILLS_SEED")
+        .ok()
+        .and_then(|s| s.trim().parse::<u64>().ok());
     let url = format!("{base}/images/generations");
-    let body = json!({
+    let mut body = json!({
         "model": model,
         "prompt": prompt,
         "n": 1,
         "response_format": "b64_json",
     });
+    if let Some(s) = seed {
+        body["seed"] = json!(s);
+    }
     let timeout = Duration::from_secs(
         std::env::var("LOT_XAI_TIMEOUT_SECS")
             .ok()
@@ -204,15 +341,13 @@ fn generate_grok(prompt: &str) -> Result<(Vec<u8>, Provenance), ShowError> {
         )));
     }
     let bytes = image_from_generation(&v, &agent, &token)?;
-    Ok((
-        bytes,
-        Provenance {
-            backend: "grok".into(),
-            model,
-            base_url: base,
-            auth,
-        },
-    ))
+    let mut prov = Provenance::new("grok", model, base, auth)
+        .with_prompt(prompt)
+        .with_duration_ms(crate::brain::elapsed_ms(started));
+    if let Some(s) = seed {
+        prov = prov.with_seed(s);
+    }
+    Ok((bytes, prov))
 }
 
 fn image_from_generation(
@@ -259,22 +394,9 @@ fn decode_b64(raw: &str) -> Result<Vec<u8>, ShowError> {
 }
 
 fn generate_comfy(prompt: &str) -> Result<(Vec<u8>, Provenance), ShowError> {
-    let wf_path = std::env::var("LOT_COMFY_WORKFLOW")
-        .ok()
-        .map(|s| s.trim().to_string())
-        .filter(|s| !s.is_empty())
-        .ok_or_else(|| {
-            ShowError::Msg(
-                "no comfy stills — set LOT_COMFY_WORKFLOW to a JSON graph with {{prompt}}. Did not call Grok."
-                    .into(),
-            )
-        })?;
-    let wf_file = PathBuf::from(&wf_path);
-    if !wf_file.is_file() {
-        return Err(ShowError::Msg(format!(
-            "no comfy stills — workflow not a file: {wf_path}. Did not call Grok."
-        )));
-    }
+    let started = Instant::now();
+    let wf_file = resolve_comfy_workflow()?;
+    let wf_path = wf_file.display().to_string();
     let raw = fs::read_to_string(&wf_file)?;
     if !raw.contains("{{prompt}}") {
         return Err(ShowError::Msg(
@@ -287,7 +409,8 @@ fn generate_comfy(prompt: &str) -> Result<(Vec<u8>, Provenance), ShowError> {
         ))
     })?;
     replace_prompt(&mut wf, prompt);
-    let prompt_obj = wf.get("prompt").cloned().unwrap_or(wf);
+    let mut prompt_obj = wf.get("prompt").cloned().unwrap_or(wf);
+    let seed = apply_comfy_seed(&mut prompt_obj);
     let base = comfy_base();
     let agent = ureq::AgentBuilder::new()
         .timeout_connect(Duration::from_millis(800))
@@ -314,7 +437,7 @@ fn generate_comfy(prompt: &str) -> Result<(Vec<u8>, Provenance), ShowError> {
             std::env::var("LOT_COMFY_TIMEOUT_SECS")
                 .ok()
                 .and_then(|s| s.parse().ok())
-                .unwrap_or(120),
+                .unwrap_or(300),
         );
     let image_meta = loop {
         if Instant::now() > deadline {
@@ -355,15 +478,80 @@ fn generate_comfy(prompt: &str) -> Result<(Vec<u8>, Provenance), ShowError> {
             "no comfy stills — empty image. Did not call Grok.".into(),
         ));
     }
-    Ok((
-        buf,
-        Provenance {
-            backend: "comfy".into(),
-            model: wf_path,
-            base_url: base,
-            auth: "lot_comfy_workflow".into(),
-        },
-    ))
+    let mut prov = Provenance::new("comfy", wf_path, &base, "lot_comfy_workflow")
+        .with_prompt(prompt)
+        .with_seed(seed)
+        .with_duration_ms(crate::brain::elapsed_ms(started));
+    if let Some(vram) = comfy_vram_cap(&base) {
+        prov = prov.with_vram_cap(vram);
+    }
+    Ok((buf, prov))
+}
+
+fn apply_comfy_seed(wf: &mut Value) -> u64 {
+    let chosen = std::env::var("LOT_COMFY_SEED")
+        .ok()
+        .and_then(|s| s.trim().parse().ok())
+        .or_else(|| first_graph_seed(wf))
+        .unwrap_or_else(fresh_seed);
+    set_graph_seeds(wf, chosen);
+    chosen
+}
+
+fn first_graph_seed(wf: &Value) -> Option<u64> {
+    let obj = wf.as_object()?;
+    for node in obj.values() {
+        if let Some(n) = node_seed(node) {
+            return Some(n);
+        }
+    }
+    None
+}
+
+fn node_seed(node: &Value) -> Option<u64> {
+    let seed = node.get("inputs")?.get("seed")?;
+    seed.as_u64()
+        .or_else(|| seed.as_i64().and_then(|i| u64::try_from(i).ok()))
+}
+
+fn set_graph_seeds(wf: &mut Value, seed: u64) {
+    let Some(obj) = wf.as_object_mut() else {
+        return;
+    };
+    for node in obj.values_mut() {
+        if let Some(inputs) = node.get_mut("inputs").and_then(|i| i.as_object_mut()) {
+            if inputs.contains_key("seed") {
+                inputs.insert("seed".into(), json!(seed));
+            }
+        }
+    }
+}
+
+fn fresh_seed() -> u64 {
+    std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .map(|d| d.as_nanos() as u64)
+        .unwrap_or(1)
+}
+
+fn comfy_vram_cap(base: &str) -> Option<String> {
+    if let Some(c) = crate::brain::vram_cap_from_env() {
+        return Some(c);
+    }
+    let agent = ureq::AgentBuilder::new()
+        .timeout_connect(Duration::from_millis(250))
+        .timeout_read(Duration::from_millis(400))
+        .build();
+    let v: Value = agent
+        .get(&format!("{base}/system_stats"))
+        .call()
+        .ok()?
+        .into_json()
+        .ok()?;
+    let bytes = v
+        .pointer("/devices/0/vram_total")
+        .and_then(|x| x.as_u64())?;
+    Some(format!("{}mb", bytes / 1024 / 1024))
 }
 
 fn first_comfy_image(hist: &Value, prompt_id: &str) -> Option<(String, String, String)> {
@@ -441,5 +629,149 @@ fn ext_from_bytes(b: &[u8]) -> &'static str {
         "webp"
     } else {
         "png"
+    }
+}
+
+fn mime_from_bytes(b: &[u8]) -> &'static str {
+    match ext_from_bytes(b) {
+        "jpg" => "image/jpeg",
+        "webp" => "image/webp",
+        _ => "image/png",
+    }
+}
+
+fn is_video_path(p: &Path) -> bool {
+    match p
+        .extension()
+        .and_then(|s| s.to_str())
+        .map(|s| s.to_ascii_lowercase())
+        .as_deref()
+    {
+        Some("mp4" | "mov" | "mkv" | "webm" | "m4v" | "avi") => true,
+        _ => false,
+    }
+}
+
+fn load_look_image(
+    shot: &crate::model::Shot,
+    file: Option<&Path>,
+) -> Result<(Vec<u8>, &'static str, String), ShowError> {
+    if let Some(p) = file {
+        return read_image_or_frame(p);
+    }
+    if let Some(p) = shot.still_path.as_deref() {
+        let p = Path::new(p);
+        if p.is_file() {
+            return read_image_or_frame(p);
+        }
+    }
+    if let Some(p) = shot.plate_path.as_deref() {
+        let p = Path::new(p);
+        if p.is_file() {
+            return read_image_or_frame(p);
+        }
+    }
+    Err(ShowError::Msg(
+        "no still — lot stills generate, attach a plate, or stills describe --file".into(),
+    ))
+}
+
+fn read_image_or_frame(p: &Path) -> Result<(Vec<u8>, &'static str, String), ShowError> {
+    if !p.is_file() {
+        return Err(ShowError::Msg(format!("not a file: {}", p.display())));
+    }
+    if is_video_path(p) {
+        return extract_frame(p);
+    }
+    let bytes = fs::read(p)?;
+    if bytes.is_empty() {
+        return Err(ShowError::Msg(format!(
+            "no still — empty file: {}",
+            p.display()
+        )));
+    }
+    let mime = mime_from_bytes(&bytes);
+    Ok((bytes, mime, p.display().to_string()))
+}
+
+fn extract_frame(p: &Path) -> Result<(Vec<u8>, &'static str, String), ShowError> {
+    if !crate::doctor::bin_on_path("ffmpeg") {
+        return Err(ShowError::Msg(
+            "no vision frame — ffmpeg needed to look at a plate. Did not invent a description."
+                .into(),
+        ));
+    }
+    let dest = std::env::temp_dir().join(format!(
+        "lot-look-{}-{}.jpg",
+        std::process::id(),
+        std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .map(|d| d.as_nanos())
+            .unwrap_or(0)
+    ));
+    let status = Command::new("ffmpeg")
+        .args(["-y", "-i"])
+        .arg(p)
+        .args(["-ss", "0.3", "-frames:v", "1"])
+        .arg(&dest)
+        .status()
+        .map_err(|e| {
+            ShowError::Msg(format!(
+                "no vision frame — ffmpeg: {e}. Did not invent a description."
+            ))
+        })?;
+    let bytes = if status.success() && dest.is_file() {
+        fs::read(&dest).unwrap_or_default()
+    } else {
+        Vec::new()
+    };
+    let _ = fs::remove_file(&dest);
+    if bytes.is_empty() {
+        return Err(ShowError::Msg(
+            "no vision frame — ffmpeg wrote no still. Did not invent a description.".into(),
+        ));
+    }
+    Ok((bytes, "image/jpeg", format!("{}#frame", p.display())))
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn bundled_flux_still_has_prompt_slot() {
+        let p = PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+            .join("packs")
+            .join(BUNDLED_COMFY_STILL);
+        let raw = fs::read_to_string(&p).expect("comfy-flux-still.json");
+        assert!(raw.contains("{{prompt}}"));
+        assert!(raw.contains("flux1-dev-fp8.safetensors"));
+        assert!(
+            !raw.contains("CheckpointLoaderSimple"),
+            "lock pack is Flux UNET, not a dummy SDXL checkpoint"
+        );
+    }
+
+    #[test]
+    fn comfy_seed_from_graph_is_recorded() {
+        let mut wf: Value = serde_json::from_str(
+            r#"{"3":{"class_type":"KSampler","inputs":{"seed":42,"steps":8}}}"#,
+        )
+        .unwrap();
+        assert_eq!(apply_comfy_seed(&mut wf), 42);
+        assert_eq!(wf["3"]["inputs"]["seed"], 42);
+    }
+
+    #[test]
+    fn comfy_seed_env_overrides_graph() {
+        std::env::set_var("LOT_COMFY_SEED", "99");
+        let mut wf: Value = serde_json::from_str(
+            r#"{"3":{"class_type":"KSampler","inputs":{"seed":42,"steps":8}}}"#,
+        )
+        .unwrap();
+        let n = apply_comfy_seed(&mut wf);
+        std::env::remove_var("LOT_COMFY_SEED");
+        assert_eq!(n, 99);
+        assert_eq!(wf["3"]["inputs"]["seed"], 99);
     }
 }

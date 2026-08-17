@@ -3,13 +3,14 @@
 
 use crate::model::MediaItem;
 use crate::show::{
-    append_event, append_event_with, bump, require_current, write_show, Show, ShowError,
+    append_event_with, bump, require_current, write_show, Show, ShowError,
 };
 use crate::Provenance;
 use serde::{Deserialize, Serialize};
 use std::fs;
 use std::path::{Path, PathBuf};
 use std::process::Command;
+use std::time::Instant;
 
 #[derive(Debug, Clone, Default, Serialize, Deserialize)]
 pub struct Stems {
@@ -34,6 +35,7 @@ pub fn stems_soundtrack(
     file: Option<&Path>,
     generate: bool,
 ) -> Result<(PathBuf, Show), ShowError> {
+    crate::caps::require_write()?;
     let (dir, mut show) = require_current()?;
     if let Some(b) = brief {
         show.stems.soundtrack_brief = b.trim().to_string();
@@ -61,12 +63,10 @@ pub fn stems_soundtrack(
             kind: "audio".into(),
             ..MediaItem::default()
         });
-        show.stems.soundtrack_provenance = Some(Provenance {
-            backend: "file".into(),
-            model: "attach".into(),
-            base_url: String::new(),
-            auth: "local".into(),
-        });
+        show.stems.soundtrack_provenance = Some(
+            Provenance::new("file", "attach", "", "local")
+                .with_prompt(&show.stems.soundtrack_brief),
+        );
     }
 
     let cue = write_soundtrack_cue(&dir, &show)?;
@@ -79,6 +79,7 @@ pub fn stems_soundtrack(
             .filter(|s| !s.is_empty())
         {
             let out = dir.join("stems").join("soundtrack.wav");
+            let started = Instant::now();
             let status = Command::new(&cmd)
                 .arg(&show.stems.soundtrack_brief)
                 .arg(&out)
@@ -90,12 +91,11 @@ pub fn stems_soundtrack(
                 ));
             }
             show.stems.soundtrack_path = Some(out.display().to_string());
-            show.stems.soundtrack_provenance = Some(Provenance {
-                backend: "local".into(),
-                model: cmd,
-                base_url: String::new(),
-                auth: "lot_soundtrack_cmd".into(),
-            });
+            show.stems.soundtrack_provenance = Some(
+                Provenance::new("local", cmd, "", "lot_soundtrack_cmd")
+                    .with_prompt(&show.stems.soundtrack_brief)
+                    .with_duration_ms(crate::brain::elapsed_ms(started)),
+            );
         } else {
             return Err(ShowError::Msg(
                 "no soundtrack engine — set LOT_SOUNDTRACK_CMD <cmd> <brief> <out.wav>, or attach --file. Cue is written; never a fake track.".into(),
@@ -113,6 +113,7 @@ pub fn stems_soundtrack(
         Some(serde_json::json!({
             "cue": show.stems.soundtrack_cue,
             "audio": show.stems.soundtrack_path,
+            "provenance": show.stems.soundtrack_provenance,
         })),
     )?;
     Ok((dir, show))
@@ -146,6 +147,7 @@ pub fn stems_vo(
     file: Option<&Path>,
     generate: bool,
 ) -> Result<(PathBuf, Show), ShowError> {
+    crate::caps::require_write()?;
     let (dir, mut show) = require_current()?;
     if let Some(t) = text {
         show.stems.vo_text = t.trim().to_string();
@@ -164,12 +166,9 @@ pub fn stems_vo(
             .join(p.file_name().and_then(|s| s.to_str()).unwrap_or("vo.wav"));
         fs::copy(p, &dest)?;
         show.stems.vo_path = Some(dest.display().to_string());
-        show.stems.vo_provenance = Some(Provenance {
-            backend: "file".into(),
-            model: "attach".into(),
-            base_url: String::new(),
-            auth: "local".into(),
-        });
+        show.stems.vo_provenance = Some(
+            Provenance::new("file", "attach", "", "local").with_prompt(&show.stems.vo_text),
+        );
     }
 
     if generate {
@@ -190,7 +189,15 @@ pub fn stems_vo(
     show.phase = "stems".into();
     bump(&mut show);
     write_show(&dir, &show)?;
-    append_event(&dir, "stems.vo", &show)?;
+    append_event_with(
+        &dir,
+        "stems.vo",
+        &show,
+        Some(serde_json::json!({
+            "audio": show.stems.vo_path,
+            "provenance": show.stems.vo_provenance,
+        })),
+    )?;
     Ok((dir, show))
 }
 
@@ -218,6 +225,8 @@ pub fn vo_backend_name() -> Option<&'static str> {
 }
 
 fn generate_vo(text: &str, out: &Path) -> Result<Provenance, ShowError> {
+    let started = Instant::now();
+    let timed = |p: Provenance| p.with_duration_ms(crate::brain::elapsed_ms(started));
     if let Ok(cmd) = std::env::var("LOT_TTS_CMD") {
         let cmd = cmd.trim();
         if !cmd.is_empty() {
@@ -227,12 +236,9 @@ fn generate_vo(text: &str, out: &Path) -> Result<Provenance, ShowError> {
                 .status()
                 .map_err(|e| ShowError::Msg(format!("vo engine: {e}")))?;
             if status.success() && out.is_file() {
-                return Ok(Provenance {
-                    backend: "local".into(),
-                    model: cmd.to_string(),
-                    base_url: String::new(),
-                    auth: "lot_tts_cmd".into(),
-                });
+                return Ok(timed(
+                    Provenance::new("local", cmd, "", "lot_tts_cmd").with_prompt(text),
+                ));
             }
         }
     }
@@ -244,12 +250,9 @@ fn generate_vo(text: &str, out: &Path) -> Result<Provenance, ShowError> {
             .arg(text)
             .status();
         if status.map(|s| s.success()).unwrap_or(false) && out.is_file() {
-            return Ok(Provenance {
-                backend: "local".into(),
-                model: "piper".into(),
-                base_url: String::new(),
-                auth: "piper".into(),
-            });
+            return Ok(timed(
+                Provenance::new("local", "piper", "", "piper").with_prompt(text),
+            ));
         }
     }
     let espeak = if crate::doctor::bin_on_path("espeak-ng") {
@@ -266,32 +269,23 @@ fn generate_vo(text: &str, out: &Path) -> Result<Provenance, ShowError> {
             .arg(text)
             .status();
         if status.map(|s| s.success()).unwrap_or(false) && out.is_file() {
-            return Ok(Provenance {
-                backend: "local".into(),
-                model: espeak.into(),
-                base_url: String::new(),
-                auth: "espeak".into(),
-            });
+            return Ok(timed(
+                Provenance::new("local", espeak, "", "espeak").with_prompt(text),
+            ));
         }
     }
     if cfg!(windows) {
         sapi_wav(text, out)?;
-        return Ok(Provenance {
-            backend: "local".into(),
-            model: "sapi".into(),
-            base_url: String::new(),
-            auth: "windows_sapi".into(),
-        });
+        return Ok(timed(
+            Provenance::new("local", "sapi", "", "windows_sapi").with_prompt(text),
+        ));
     }
     if crate::doctor::bin_on_path("say") {
         let status = Command::new("say").args(["-o"]).arg(out).arg(text).status();
         if status.map(|s| s.success()).unwrap_or(false) && out.is_file() {
-            return Ok(Provenance {
-                backend: "local".into(),
-                model: "say".into(),
-                base_url: String::new(),
-                auth: "say".into(),
-            });
+            return Ok(timed(
+                Provenance::new("local", "say", "", "say").with_prompt(text),
+            ));
         }
     }
     Err(ShowError::Msg(

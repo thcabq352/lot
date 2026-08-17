@@ -18,13 +18,18 @@ lot mcp
 
 Optional `--show <path>` (CLI global) or MCP `path` opens that show, then runs. Omit to keep the current pointer.
 
+`--cap` / `LOT_CAP` / MCP `cap`: `read | write | render | export | spend | all`. Unset = **all** (human loop). `read` cannot `dailies circle` or `stills generate`. `write` cannot start Comfy or Grok spend without `render` / `spend`.
+
 `lot mcp` is NDJSON JSON-RPC 2.0 on stdin/stdout. Tools:
 
-- `lot_status`, `lot_create`, `lot_open`, `lot_doctor`
+- `lot_status`, `lot_create`, `lot_open`, `lot_doctor`, `lot_help`, `lot_snapshot`, `lot_restore`
 - `lot_writer_brief`, `lot_writer_style`, `lot_writer_cast`, `lot_writer_draft`, `lot_writer_revise`, `lot_writer_lock`, `lot_writer_unlock`
 - `lot_breakdown_import`, `lot_breakdown_parse`
-- `lot_wall_add`, `lot_picture_lock`, `lot_stills_generate`, `lot_board_export`, `lot_slate_set`
-- `lot_dailies_ingest`, `lot_dailies_circle`, `lot_dailies_export`, `lot_cut_export`
+- `lot_wall_add`, `lot_picture_lock`, `lot_stage_place`, `lot_stage_camera`, `lot_stage_export`
+- `lot_stills_generate`, `lot_stills_describe`, `lot_board_export`
+- `lot_slate_set`, `lot_slate_compile`, `lot_slate_target`, `lot_slate_lora`
+- `lot_motion_plate`, `lot_motion_marks`, `lot_motion_export`, `lot_motion_analyze`
+- `lot_dailies_ingest`, `lot_dailies_circle`, `lot_dailies_export`, `lot_cut_export`, `lot_finish`
 - `lot_stems_soundtrack`, `lot_stems_vo`
 
 Hermes:
@@ -49,7 +54,7 @@ lot writer revise --notes "…"
 lot writer lock
 ```
 
-Empty brief → `no brief`. No brain → `no brain —` and never a fake fountain.
+Empty brief → `no brief`. No brain → `no brain —` and never a fake fountain. Local brain is **Ollama** (`:11434`) for LLM; Grok stays #1 when online.
 
 ## Breakdown (ScriptBreak logic)
 
@@ -61,15 +66,68 @@ lot breakdown status --json
 
 Parser is ScriptBreak-equivalent (sluglines, `NAME (quietly)` → character ADA). Import does not delete the source `.txt` / `.scriptbreak`.
 
+## Stage (2D marks)
+
+```
+lot stage place --shot 01 --who Ada --mark "by the trunk" --x 2 --z 4 --json
+lot stage camera --shot 01 --size WIDE --angle eye --lens 35 --move "dolly in" --json
+lot stage export --json
+```
+
+Writes `stage/block.json`. Does **not** invent glTF / depth. 3D grey-box stays in Blockout (doctor `blockout`). Does not rename the shot.
+
+## Snapshot / restore
+
+```
+lot snapshot --json
+lot snapshot --list --json
+lot restore --rev 6 --json
+lot help --json
+```
+
+A later draft must not eat an earlier one. `lot help --json` is the contract.
+
 ## Stills + Board
 
 ```
 lot stills generate --shot 01 --backend grok --json
-lot stills generate --shot 01 --backend comfy --json   # needs LOT_COMFY_WORKFLOW with {{prompt}}
+lot stills generate --shot 01 --backend comfy --json   # Flux lock pack, or LOT_COMFY_WORKFLOW with {{prompt}}
+lot stills describe --shot 01 --json                   # Grok vision or Ollama VL; optional --file
 lot board export --json
 ```
 
-`--backend` is required: `grok` or `comfy`. No silent swap. No fake PNG. Prompt from slate or `--prompt`.
+`--backend` is required: `grok` or `comfy`. No silent swap. No fake PNG. Prompt from slate or `--prompt`. Unset `LOT_COMFY_WORKFLOW` uses `crates/lot-core/packs/comfy-flux-still.json`. `off` disables the pack. Every generate records provenance: backend, model, seed, prompt hash, duration, VRAM cap (`LOT_VRAM_CAP` or Comfy `vram_total`). Describe looks at the still, a plate frame, or `--file`. No vision → `no vision —` and **no** invented look.
+
+## Slate (canon + per-target compile)
+
+```
+lot slate set --shot 01 --prompt "wide tent, neon rain"
+lot slate set --shot 01 --target kling --prompt "…"   # rewrite only; canon stays
+lot slate target --id ltx-2.5
+lot slate compile --shot 01 --target veo --json       # needs brain; prompt-server uses LOT_PROMPT_SERVER
+lot slate lora --shot 01 --id face-lock --weight 0.8 --model ltx-2.5
+```
+
+Canon lives on the shot. Targets (ltx-2.3 / ltx-2.5 / grok / comfy / prompt-server / kling / veo / sora / seedance / hailuo / flux / midjourney / gpt-image / krea / wan / runway) do not replace it. No brain / no server → `no brain —` / `no prompt server —` and **no** invented rewrite.
+
+## Motion Previs (plates → marks)
+
+```
+lot motion plate --file ref.mp4 --shot 01 --mode camera_only --json
+lot motion marks --shot 01 --move "dolly in" --notes "keep neon" --json
+lot motion export --json
+lot motion analyze --shot 01 --json
+```
+
+Modes: `camera_only` | `actor_motion` | `object_motion` | `full_scene`. Writes `motion/previs.json` + `motion/prompt.md`. Does **not** invent OpenPose / depth. Pose/depth stay in Motion Previs Studio (doctor `motion_previs`) or `LOT_MOTION_CMD`. Plate bind does not rename the shot.
+
+## Finish (optional upscale + FPS)
+
+```
+lot finish --file take.mp4 --upscale --fps 24 --json
+```
+
+Needs ffmpeg or `LOT_UPSCALE_CMD`. Missing engine → `no finish —` and **no** stub.
 
 ## Dailies (Circle Take)
 
@@ -95,7 +153,7 @@ No soundtrack engine → `no soundtrack engine —` and **no** silent stub. No T
 
 ## Stack
 
-- `crates/lot-core` — schema, Writer, Breakdown, Dailies, Stems, Stills, doctor
+- `crates/lot-core` — schema, Writer, Breakdown, Stage, Dailies, Stems, Stills, Slate, Motion, Finish, snapshot, doctor, Ollama brain
 - `crates/lot-cli` — binary `lot`
 - `crates/lot-mcp` — stdio MCP (`lot mcp`)
 
@@ -103,7 +161,7 @@ No soundtrack engine → `no soundtrack engine —` and **no** silent stub. No T
 
 1. Agent first. Same verbs on CLI and MCP.
 2. School default **off**. No lesson fields if off.
-3. Local brains stay. Grok/Cursor are #1 when online.
+3. Local brains stay. **Ollama** is the local LLM + vision choice (`LOT_OLLAMA_MODEL`, `LOT_OLLAMA_VISION_MODEL`). Grok/Cursor are #1 when online.
 4. Stills: `grok | comfy` — no silent swap.
 5. Secrets never in `show.lot` or this repo.
 6. Do not port Wasserman Electron apps here unless replacing an adapter.

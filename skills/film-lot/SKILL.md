@@ -1,10 +1,33 @@
+---
+name: film-lot
+description: "Use when Lot, lot mcp, or show.lot. Filmmaker loop on lot mcp. Lot code goes to coder."
+version: 1.1.0
+license: MIT
+platforms: [windows, macos, linux]
+metadata:
+  hermes:
+    tags: [lot, film, mcp, stdio, agent-first]
+---
+
 # film-lot
 
 Hermes skill for **Lot** — agent-first film kernel. One binary, same verbs on CLI and MCP.
 
+Home: `C:\Users\thcab\lot` — **not** `video-buddy-suite`.
+
 ## Trigger
 
-“open the lot,” “write a screenplay,” “break this down,” “take this show to dailies.”
+“open the lot,” “write a screenplay,” “break this down,” “take this show to dailies,” Lot, `lot mcp`, `show.lot`.
+
+## Lane
+
+| Work | Who |
+|---|---|
+| Filmmaker loop (this show) | This profile + `lot mcp` |
+| Lot **code** (Rust, tests, kernel) | `hermes -p coder` in the Lot repo |
+| 3D grey-box / pose-depth | Blockout / Motion Previs Studio — adapters only |
+
+Do not start Tauri or installers from this skill. Do not port Wasserman Electron.
 
 ## Door
 
@@ -18,30 +41,50 @@ Hermes:
 { "command": "C:/Users/thcab/lot/target/debug/lot.exe", "args": ["mcp"] }
 ```
 
-Flags only. No TTY. No folder pickers. `--json` / MCP `path` for a show.
+Flags only. No TTY. No folder pickers. `--json` / MCP `path` for a show. Optional `--show` / `path` opens that show, then runs.
+
+A show is a directory with `show.json` + `events.jsonl` + `media/`.
 
 ## First call
 
-`lot_status` (or `lot status --json`). Read `school`, `renderer`, `phase`, `doctor`.
+1. `lot_status` (or `lot status --json`)
+2. `lot_doctor` (or `lot doctor --json`)
 
-If `school.enabled` is false, skip all pedagogy.
+Read `school`, `renderer`, `phase`, `cap`, `doctor`. If `school.enabled` is false, skip all pedagogy.
+
+If `doctor.stills_comfy_workflow` is false, Comfy stills will fail honestly — do not invent a PNG.
 
 ## Phase router (no LangGraph)
 
-1. **Writer** — brief, style, cast, draft, revise, lock. Formats: feature | 30min | 15s | episodic | advertisement | music-video (`ad`, `mv`).
-2. **Breakdown** — import/parse (ScriptBreak-equivalent, including `NAME (quietly)`)
-3. **Wall / Picture** — beats, lock shot cards
-4. **Stills / Board** — `stills generate --backend grok|comfy` (no silent swap), then `board export` toward Slate
-5. **Slate** — prompts on shots
-6. **Dailies** — ingest `01-foo.mp4` → shot 01 (do not rename the shot), circle, FCPXML
-7. **Stems** — soundtrack cue (Grok/local) + attach or `LOT_SOUNDTRACK_CMD`; VO generate (SAPI / piper / espeak / say) or attach. Never a fake track.
-8. **Cut** — same FCPXML interchange. Resolve Studio is optional later.
+1. **Writer** — brief, style, cast, draft, revise, lock. Formats: feature | 30min | 15s | episodic | advertisement | music-video (`ad`, `mv`). Empty brief → `no brief`. No brain → `no brain —` and never a fake fountain.
+2. **Breakdown** — import/parse (ScriptBreak-equivalent, including `NAME (quietly)` → character). Import does not delete the source.
+3. **Wall / Picture** — beats, lock shot cards. Does not rename the shot.
+4. **Stage** — 2D floor marks + camera card. `stage export` → `stage/block.json`. 3D stays in Blockout. Never invent glTF.
+5. **Stills / Board** — `stills generate --backend grok|comfy` (no silent swap), `stills describe` (Grok vision or Ollama VL; no invented look), then `board export`. Generates record seed, prompt hash, duration, VRAM cap so a take can be reshot.
+6. **Motion** — plate + marks (`camera_only` | `actor_motion` | `object_motion` | `full_scene`). Export `motion/previs.json`. Pose/depth stay in Motion Previs Studio. Never invent OpenPose.
+7. **Slate** — canon on the shot; `slate compile --target` for LTX, API providers, or `LOT_PROMPT_SERVER`. LoRAs are metadata. No invented rewrite if the brain/server is down.
+8. **Dailies** — ingest `01-foo.mp4` → shot 01 (do not rename the shot), circle, FCPXML. Circle without `--take` fails (no GUI).
+9. **Stems** — soundtrack cue + attach or `LOT_SOUNDTRACK_CMD`; VO generate (SAPI / piper / espeak / say) or attach. Never a fake track.
+10. **Finish / Cut** — optional `finish --upscale --fps`; FCPXML interchange. Missing engine → `no finish —` and no stub.
 
-Stage / Motion stay engines until native. Stems soundtrack + VO are in-kernel. Do not port Wasserman Electron.
+`lot snapshot` / `lot restore --rev` before a risky revise. `lot help --json` is the contract.
+
+## Stills lock vs hunt
+
+- **Lock (default Comfy still):** Flux.1-dev fp8 — bundled `crates/lot-core/packs/comfy-flux-still.json` (`{{prompt}}`). Unset `LOT_COMFY_WORKFLOW` uses this pack. Override with a path, or `off` to disable.
+- **Hunt (later):** Z-Image Turbo. Do not swap the lock pack silently.
+- Skip SDXL unless a LoRA forces it.
+- `--backend` is required: `grok` or `comfy`. No silent swap. No fake PNG.
+- Every generate records provenance on the show: backend, model, seed, prompt hash, duration, VRAM cap. Missing seed/VRAM stays omitted — do not invent.
+- Caps: Comfy needs `render`. Grok stills need `spend`.
 
 ## Brains
 
-Grok (xAI OAuth) #1 when online. Local OpenAI-compat stays. Cursor #1 for Lot repo work. `lot doctor` lists what is actually up. Stills: `backend=grok|comfy`, no silent swap.
+Grok (xAI OAuth) #1 when online. **Ollama** is the local LLM + vision brain (`:11434`; `LOT_OLLAMA_MODEL` / `LOT_OLLAMA_VISION_MODEL`). LM Studio / other OpenAI-compat stay. Cursor #1 for Lot repo work. `lot doctor` lists `ollama`, `ollama_llm`, `ollama_vision`.
+
+## Caps (AC-012)
+
+Pass `cap` / `--cap` / `LOT_CAP`. Unset = all. `read` cannot circle or generate stills. `write` cannot Comfy (`render`) or Grok stills (`spend`). Write-only drafts stay on Ollama.
 
 ## William bar
 

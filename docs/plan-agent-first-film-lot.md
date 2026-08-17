@@ -72,7 +72,7 @@ Do not put William’s name on a splash as branding unless the humans ask. Do pu
 | 2 | Wall | Cork Board | Beats / acts / cards |
 | 3 | Picture | Master Canvas | Shot cards, locks, refs |
 | 4 | Stage | Blockout | 3D block + camera (or 2D marks until 3D lands) |
-| 5 | Motion | Motion Previs | Optional; plates → marks |
+| 5 | Motion | Motion Previs | Plates → marks in-kernel; pose/depth stay in Studio |
 | 6 | Board | Storyboard Reference | Stills + board export |
 | 7 | Slate | Slate | Continuity-locked prompts |
 | 8 | Dailies | Circle Take | Ingest, gate, circle, FCPXML |
@@ -153,9 +153,9 @@ Old suite MCPs (`scriptbreak-mcp.mjs`, …) stay as **adapters** until that sect
 lot_open / lot_create / lot_status
 writer_* 
 breakdown_*          # import + parse; NOT read-only
-wall_* / picture_* / stage_* / board_* / slate_*
+wall_* / picture_* / stage_* / board_* / slate_* / motion_*
 dailies_ingest / dailies_circle / dailies_export
-stems_soundtrack / stems_vo / cut_export
+stems_soundtrack / stems_vo / cut_export / finish
 lot_handoff          # “advance phase” with a dry-run
 school_get / school_set
 ```
@@ -279,7 +279,7 @@ Replacement order (pain, not prestige):
 2. Slate + Dailies (where shows actually die)  
 3. Picture / Wall (JSON, cheap)  
 4. Board export → Slate (one button / one tool)  
-5. Stage / Motion (keep engines). Stems soundtrack + VO are already in-kernel.
+5. Stage 2D marks/export are in-kernel; 3D stays in Blockout. Motion plates/marks/export are in-kernel; pose/depth stay in Motion Previs Studio. Stems soundtrack + VO are already in-kernel.
 
 Original apps remain installed. Lot never deletes a user’s `.scriptbreak` / `.ctake`.
 
@@ -313,6 +313,9 @@ Original apps remain installed. Lot never deletes a user’s `.scriptbreak` / `.
 - Circle/export FCPXML. Expected duration = actual probe until the user asks for longer takes.
 - Stems soundtrack cue + VO generate (attach / `LOT_SOUNDTRACK_CMD` / local TTS). Never a silent stub.
 - Stills: `stills_generate backend=grok|comfy` (no silent swap). Board export → Slate prompts on the same shots.
+- Slate compile: canon stays; per-target rewrites for LTX, API providers, and `LOT_PROMPT_SERVER`. LoRAs are metadata. No invented rewrite if the brain/server is down.
+- Motion: `motion_plate` / `motion_marks` / `motion_export` (plates → marks). Never a fake OpenPose bundle.
+- Finish: optional `--upscale` / `--fps` via ffmpeg or `LOT_UPSCALE_CMD`. No stub.
 
 ### Phase 4 — Shell UI
 
@@ -352,6 +355,12 @@ Original apps remain installed. Lot never deletes a user’s `.scriptbreak` / `.
 - **AC-016 (William bar):** Shell UI shows one show, current phase, and the agent’s last event with no folder dialog on the happy path. School is a dimmer (off = no lesson chrome). Not a gray form farm. Not a segregated “special” skin.
 - **AC-017:** `lot stems soundtrack --brief "…" --json` writes `stems/soundtrack-cue.md` and no wav. `--generate` without `LOT_SOUNDTRACK_CMD` exits non-zero (`no soundtrack engine —`) and still writes no wav. `lot writer style --format ad` stores `advertisement`; `--format mv` stores `music-video`.
 - **AC-018:** `lot stills generate --shot 01 --backend grok` never calls Comfy; `--backend comfy` never calls Grok. Missing engine → `no grok stills —` / `no comfy stills —` and **no** fake PNG. `lot board export` writes `board/board.json` from shots + stills + slate prompts.
+- **AC-019:** `lot slate set --shot 01 --target kling --prompt "…"` stores a Kling rewrite and leaves the canon intact. `lot slate compile --shot 01 --target veo` with no brain exits `no brain —` and writes no rewrite. Unknown target errors.
+- **AC-020:** `lot motion plate --file ref.mp4 --shot 01` binds the plate without renaming the shot. `lot motion export` writes `motion/previs.json` + `prompt.md` from plates + marks. Analyze without `LOT_MOTION_CMD` / Studio writes marks / ffprobe only — **no** fake OpenPose or depth.
+- **AC-021:** `lot finish --upscale --fps 24` without ffmpeg / `LOT_UPSCALE_CMD` (or when ffmpeg writes nothing) exits `no finish —` and writes **no** stub file.
+- **AC-022:** `lot stage place --shot 01 --who Ada --mark "by the trunk"` stores a 2D mark and does not rename the shot. `lot stage export` writes `stage/block.json` with **no** glTF / depth invention.
+- **AC-023:** `lot snapshot` then a brief change, then `lot restore --rev N` restores the earlier brief and bumps rev. Missing rev errors with the list of snapshots.
+- **AC-024:** `lot help --json` lists CLI + MCP verbs including stage, snapshot, restore, motion, slate. School default is off.
 
 ---
 

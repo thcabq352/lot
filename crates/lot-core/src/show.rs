@@ -77,6 +77,10 @@ pub struct Show {
     /// Last explicit stills backend (`grok` | `comfy`). Not a fallback.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub stills_backend: Option<String>,
+    #[serde(default)]
+    pub slate: crate::model::SlateState,
+    #[serde(default)]
+    pub finish: crate::model::FinishState,
 }
 
 #[derive(Debug, Clone, Default, Serialize, Deserialize)]
@@ -133,11 +137,14 @@ impl Show {
             writer: Writer::default(),
             stems: crate::stems::Stems::default(),
             stills_backend: None,
+            slate: crate::model::SlateState::default(),
+            finish: crate::model::FinishState::default(),
         }
     }
 }
 
 pub fn create_show(dir: &Path, name: Option<&str>) -> Result<(PathBuf, Show), ShowError> {
+    crate::caps::require_write()?;
     let dir = std::path::absolute(dir).unwrap_or_else(|_| dir.to_path_buf());
     let show_json = dir.join(SHOW_FILE);
     if show_json.exists() {
@@ -196,6 +203,7 @@ pub fn require_current() -> Result<(PathBuf, Show), ShowError> {
 }
 
 fn require_unlocked() -> Result<(PathBuf, Show), ShowError> {
+    crate::caps::require_write()?;
     let (dir, show) = require_current()?;
     if show.writer.locked {
         return Err(ShowError::Msg(
@@ -329,6 +337,7 @@ pub fn replace_cast_json(raw: &str) -> Result<(PathBuf, Show), ShowError> {
 }
 
 pub fn lock_writer() -> Result<(PathBuf, Show), ShowError> {
+    crate::caps::require_write()?;
     let (dir, mut show) = require_current()?;
     if show.writer.locked {
         return Ok((dir, show));
@@ -341,6 +350,7 @@ pub fn lock_writer() -> Result<(PathBuf, Show), ShowError> {
 }
 
 pub fn unlock_writer() -> Result<(PathBuf, Show), ShowError> {
+    crate::caps::require_write()?;
     let (dir, mut show) = require_current()?;
     if !show.writer.locked {
         return Ok((dir, show));
@@ -400,9 +410,7 @@ fn write_fountain(
         kind,
         show,
         Some(serde_json::json!({
-            "backend": show.writer.draft_provenance.as_ref().map(|p| &p.backend),
-            "model": show.writer.draft_provenance.as_ref().map(|p| &p.model),
-            "auth": show.writer.draft_provenance.as_ref().map(|p| &p.auth),
+            "provenance": show.writer.draft_provenance,
         })),
     )?;
     Ok(())
@@ -521,6 +529,8 @@ mod tests {
 
     fn isolate_home() {
         std::env::remove_var("LOT_SHOW");
+        std::env::remove_var("LOT_CAP");
+        crate::caps::clear_caps();
         std::env::set_var("LOT_HOME", tmp().join("home"));
     }
 
@@ -538,6 +548,13 @@ mod tests {
         std::env::remove_var("XAI_API_KEY");
         std::env::set_var("LOT_LOCAL_BASE_URL", "http://127.0.0.1:9/v1");
         std::env::set_var("LOT_LOCAL_MODEL", "nope");
+        std::env::set_var("LOT_OLLAMA_HOST", "http://127.0.0.1:9");
+        std::env::remove_var("LOT_OLLAMA_VISION_MODEL");
+        std::env::remove_var("LOT_LOCAL_VISION_MODEL");
+        std::env::set_var("LOT_COMFY_WORKFLOW", "off");
+        std::env::remove_var("LOT_VRAM_CAP");
+        std::env::remove_var("LOT_COMFY_SEED");
+        std::env::remove_var("LOT_STILLS_SEED");
     }
 
     #[test]
@@ -667,6 +684,7 @@ mod tests {
         std::env::remove_var("LOT_HERMES_HOME");
         std::env::remove_var("LOT_LOCAL_BASE_URL");
         std::env::remove_var("LOT_LOCAL_MODEL");
+        std::env::remove_var("LOT_OLLAMA_HOST");
     }
 
     #[test]
@@ -758,6 +776,7 @@ mod tests {
         std::env::remove_var("LOT_HERMES_HOME");
         std::env::remove_var("LOT_LOCAL_BASE_URL");
         std::env::remove_var("LOT_LOCAL_MODEL");
+        std::env::remove_var("LOT_OLLAMA_HOST");
     }
 
     #[test]
@@ -765,7 +784,6 @@ mod tests {
         let _g = ENV.lock().unwrap_or_else(|e| e.into_inner());
         let (dir, mut show) = setup_show("Stills");
         isolate_brain();
-        std::env::remove_var("LOT_COMFY_WORKFLOW");
         show.shots.push(crate::model::Shot {
             id: "sh-1".into(),
             num: "01".into(),
@@ -794,6 +812,118 @@ mod tests {
         std::env::remove_var("LOT_HERMES_HOME");
         std::env::remove_var("LOT_LOCAL_BASE_URL");
         std::env::remove_var("LOT_LOCAL_MODEL");
+        std::env::remove_var("LOT_OLLAMA_HOST");
+    }
+
+    #[test]
+    fn comfy_workflow_off_skips_bundled_unset_finds_pack() {
+        let _g = ENV.lock().unwrap_or_else(|e| e.into_inner());
+        std::env::set_var("LOT_COMFY_WORKFLOW", "off");
+        assert!(crate::stills::resolve_comfy_workflow().is_err());
+        std::env::remove_var("LOT_COMFY_WORKFLOW");
+        let p = crate::stills::resolve_comfy_workflow().expect("bundled flux still");
+        assert!(p.ends_with("comfy-flux-still.json"));
+        let raw = fs::read_to_string(&p).unwrap();
+        assert!(raw.contains("{{prompt}}"), "{p:?}");
+        std::env::set_var("LOT_COMFY_WORKFLOW", "off");
+    }
+
+    #[test]
+    fn stills_describe_no_image_and_no_invented_look() {
+        let _g = ENV.lock().unwrap_or_else(|e| e.into_inner());
+        let (dir, mut show) = setup_show("Look");
+        isolate_brain();
+        show.shots.push(crate::model::Shot {
+            id: "sh-1".into(),
+            num: "01".into(),
+            name: "tent".into(),
+            prompt: "wide tent".into(),
+            ..crate::model::Shot::default()
+        });
+        write_show(&dir, &show).unwrap();
+        let err = crate::stills_describe("01", None).unwrap_err().to_string();
+        assert!(err.contains("no still"), "{err}");
+        assert!(read_show(&dir).unwrap().shots[0].desc.is_empty());
+
+        // 1x1 PNG — vision brain is isolated, so no invented look.
+        let png = dir.join("media").join("dot.png");
+        fs::write(
+            &png,
+            [
+                0x89, 0x50, 0x4E, 0x47, 0x0D, 0x0A, 0x1A, 0x0A, 0x00, 0x00, 0x00, 0x0D, 0x49, 0x48,
+                0x44, 0x52, 0x00, 0x00, 0x00, 0x01, 0x00, 0x00, 0x00, 0x01, 0x08, 0x06, 0x00, 0x00,
+                0x00, 0x1F, 0x15, 0xC4, 0x89, 0x00, 0x00, 0x00, 0x0A, 0x49, 0x44, 0x41, 0x54, 0x78,
+                0x9C, 0x63, 0x00, 0x01, 0x00, 0x00, 0x05, 0x00, 0x01, 0x0D, 0x0A, 0x2D, 0xB4, 0x00,
+                0x00, 0x00, 0x00, 0x49, 0x45, 0x4E, 0x44, 0xAE, 0x42, 0x60, 0x82,
+            ],
+        )
+        .unwrap();
+        let err = crate::stills_describe("01", Some(&png))
+            .unwrap_err()
+            .to_string();
+        assert!(err.contains("no vision"), "{err}");
+        assert!(read_show(&dir).unwrap().shots[0].desc.is_empty());
+        std::env::remove_var("HERMES_HOME");
+        std::env::remove_var("LOT_HERMES_HOME");
+        std::env::remove_var("LOT_LOCAL_BASE_URL");
+        std::env::remove_var("LOT_LOCAL_MODEL");
+        std::env::remove_var("LOT_OLLAMA_HOST");
+    }
+
+    #[test]
+    fn read_cannot_circle_or_stills_generate() {
+        let _g = ENV.lock().unwrap_or_else(|e| e.into_inner());
+        let (dir, mut show) = setup_show("Caps");
+        isolate_brain();
+        show.shots.push(crate::model::Shot {
+            id: "sh-1".into(),
+            num: "01".into(),
+            name: "tent".into(),
+            prompt: "wide tent".into(),
+            ..crate::model::Shot::default()
+        });
+        show.takes.push(crate::model::Take {
+            id: "tk-1".into(),
+            shot_id: "sh-1".into(),
+            path: "media/01-foo.mp4".into(),
+            filename: "01-foo.mp4".into(),
+            ..crate::model::Take::default()
+        });
+        write_show(&dir, &show).unwrap();
+
+        crate::caps::set_caps(crate::caps::parse_caps("read").unwrap());
+        let err = crate::dailies_circle("tk-1").unwrap_err().to_string();
+        assert!(err.contains("need write"), "{err}");
+        assert!(!read_show(&dir).unwrap().takes[0].circled);
+        let err = crate::stills_generate("01", "grok", None)
+            .unwrap_err()
+            .to_string();
+        assert!(err.contains("need spend"), "{err}");
+        assert!(err.contains("Did not call Comfy"), "{err}");
+        let err = set_brief("nope").unwrap_err().to_string();
+        assert!(err.contains("need write"), "{err}");
+        assert_eq!(read_show(&dir).unwrap().writer.brief, "");
+        let (_, _, _revs) = crate::snapshot_list().unwrap();
+
+        crate::caps::set_caps(crate::caps::parse_caps("write").unwrap());
+        let err = crate::stills_generate("01", "grok", None)
+            .unwrap_err()
+            .to_string();
+        assert!(err.contains("need spend"), "{err}");
+        assert!(err.contains("Did not call Comfy"), "{err}");
+        let err = crate::stills_generate("01", "comfy", None)
+            .unwrap_err()
+            .to_string();
+        assert!(err.contains("need render"), "{err}");
+        assert!(err.contains("Did not call Grok"), "{err}");
+        assert!(!dir.join("stills").join("01.png").exists());
+
+        crate::caps::clear_caps();
+        std::env::remove_var("HERMES_HOME");
+        std::env::remove_var("LOT_HERMES_HOME");
+        std::env::remove_var("LOT_LOCAL_BASE_URL");
+        std::env::remove_var("LOT_LOCAL_MODEL");
+        std::env::remove_var("LOT_OLLAMA_HOST");
     }
 
     #[test]
@@ -830,5 +960,175 @@ mod tests {
         setup_show("NoTake");
         let err = crate::dailies_circle("").unwrap_err().to_string();
         assert!(err.contains("take") || err.contains("circle"), "{err}");
+    }
+
+    #[test]
+    fn slate_target_does_not_replace_canon() {
+        let _g = ENV.lock().unwrap_or_else(|e| e.into_inner());
+        let (dir, mut show) = setup_show("Slate");
+        show.shots.push(crate::model::Shot {
+            id: "sh-1".into(),
+            num: "01".into(),
+            name: "tent".into(),
+            prompt: "wide tent, neon rain".into(),
+            ..crate::model::Shot::default()
+        });
+        write_show(&dir, &show).unwrap();
+        crate::slate_set("01", "kling rewrite only", Some("kling")).unwrap();
+        let show = read_show(&dir).unwrap();
+        assert_eq!(show.shots[0].prompt, "wide tent, neon rain");
+        assert_eq!(
+            show.shots[0]
+                .prompt_targets
+                .get("kling")
+                .map(String::as_str),
+            Some("kling rewrite only")
+        );
+        crate::slate_lora(Some("01"), "face-lock", Some("0.8"), Some("ltx-2.5")).unwrap();
+        let show = read_show(&dir).unwrap();
+        assert_eq!(show.shots[0].loras[0].id, "face-lock");
+        assert_eq!(show.shots[0].loras[0].weight, "0.8");
+    }
+
+    #[test]
+    fn slate_compile_no_brain_does_not_invent() {
+        let _g = ENV.lock().unwrap_or_else(|e| e.into_inner());
+        let (dir, mut show) = setup_show("Compile");
+        isolate_brain();
+        std::env::remove_var("LOT_PROMPT_SERVER");
+        show.shots.push(crate::model::Shot {
+            id: "sh-1".into(),
+            num: "01".into(),
+            name: "tent".into(),
+            prompt: "wide tent, neon rain".into(),
+            ..crate::model::Shot::default()
+        });
+        write_show(&dir, &show).unwrap();
+        let err = crate::slate_compile("01", Some("kling"))
+            .unwrap_err()
+            .to_string();
+        assert!(err.contains("no brain"), "{err}");
+        let show = read_show(&dir).unwrap();
+        assert!(show.shots[0].prompt_targets.is_empty());
+        std::env::remove_var("HERMES_HOME");
+        std::env::remove_var("LOT_HERMES_HOME");
+        std::env::remove_var("LOT_LOCAL_BASE_URL");
+        std::env::remove_var("LOT_LOCAL_MODEL");
+        std::env::remove_var("LOT_OLLAMA_HOST");
+    }
+
+    #[test]
+    fn motion_plate_keeps_shot_name_and_exports_marks() {
+        let _g = ENV.lock().unwrap_or_else(|e| e.into_inner());
+        let (dir, mut show) = setup_show("Motion");
+        show.shots.push(crate::model::Shot {
+            id: "sh-1".into(),
+            num: "01".into(),
+            name: "INT. TENT - NIGHT".into(),
+            prompt: "wide tent".into(),
+            ..crate::model::Shot::default()
+        });
+        write_show(&dir, &show).unwrap();
+        let plate = dir.join("media").join("ref.mp4");
+        fs::write(&plate, b"fake-plate-bytes").unwrap();
+        crate::motion_plate(&plate, "01", Some("camera_only")).unwrap();
+        crate::motion_marks("01", Some("dolly in"), Some("keep neon"), None).unwrap();
+        let show = read_show(&dir).unwrap();
+        assert_eq!(show.shots[0].name, "INT. TENT - NIGHT");
+        assert_eq!(show.shots[0].motion_mode.as_deref(), Some("camera_only"));
+        assert_eq!(show.shots[0].motion_move, "dolly in");
+        assert!(show.shots[0].plate_path.is_some());
+        let (_, _, file) = crate::motion_export().unwrap();
+        let body = fs::read_to_string(&file).unwrap();
+        assert!(body.contains("lot-marks"), "{body}");
+        assert!(body.contains("dolly in"), "{body}");
+        assert!(
+            !body.to_lowercase().contains("openpose_keypoints"),
+            "{body}"
+        );
+        assert!(dir.join("motion").join("prompt.md").is_file());
+        std::env::remove_var("LOT_MOTION_CMD");
+        crate::motion_analyze("01").unwrap();
+        assert!(!dir.join("motion").join("01-engine").is_dir());
+    }
+
+    #[test]
+    fn finish_refuses_stub() {
+        let _g = ENV.lock().unwrap_or_else(|e| e.into_inner());
+        let (dir, _) = setup_show("Finish");
+        std::env::remove_var("LOT_UPSCALE_CMD");
+        let err = crate::finish_pickup(None, false, None)
+            .unwrap_err()
+            .to_string();
+        assert!(err.contains("finish needs"), "{err}");
+        let junk = dir.join("media").join("01-foo.mp4");
+        fs::write(&junk, b"not-a-real-video").unwrap();
+        let err = crate::finish_pickup(Some(&junk), true, Some("24"))
+            .unwrap_err()
+            .to_string();
+        assert!(err.contains("no finish"), "{err}");
+        assert!(!dir.join("finish").join("01-foo-finish.mp4").exists());
+    }
+
+    #[test]
+    fn stage_marks_keep_shot_name_and_export() {
+        let _g = ENV.lock().unwrap_or_else(|e| e.into_inner());
+        let (dir, mut show) = setup_show("Stage");
+        show.shots.push(crate::model::Shot {
+            id: "sh-1".into(),
+            num: "01".into(),
+            name: "EXT. CARNIVAL GATE - NIGHT".into(),
+            ..crate::model::Shot::default()
+        });
+        write_show(&dir, &show).unwrap();
+        crate::stage_place(
+            "01",
+            "Ada",
+            Some("by the trunk"),
+            Some("2"),
+            Some("4"),
+            None,
+            None,
+        )
+        .unwrap();
+        crate::stage_camera(
+            "01",
+            Some("WIDE"),
+            Some("eye"),
+            Some("35"),
+            Some("dolly in"),
+        )
+        .unwrap();
+        let show = read_show(&dir).unwrap();
+        assert_eq!(show.shots[0].name, "EXT. CARNIVAL GATE - NIGHT");
+        assert_eq!(show.shots[0].stage_marks[0].who, "Ada");
+        assert_eq!(show.shots[0].lens, "35");
+        let (_, _, file) = crate::stage_export().unwrap();
+        let body = fs::read_to_string(&file).unwrap();
+        assert!(body.contains("lot-marks"), "{body}");
+        assert!(body.contains("by the trunk"), "{body}");
+        assert!(body.contains("does not invent"), "{body}");
+        assert!(!dir.join("stage").join("scene.gltf").exists());
+        assert!(dir.join("stage").join("prompt.md").is_file());
+    }
+
+    #[test]
+    fn snapshot_then_restore_keeps_earlier_brief() {
+        let _g = ENV.lock().unwrap_or_else(|e| e.into_inner());
+        let (dir, _) = setup_show("Snap");
+        crate::set_brief("version one — Ada will not put it on").unwrap();
+        let rev = read_show(&dir).unwrap().rev;
+        crate::snapshot_show().unwrap();
+        crate::set_brief("version two — she puts it on").unwrap();
+        assert_eq!(
+            read_show(&dir).unwrap().writer.brief,
+            "version two — she puts it on"
+        );
+        crate::restore_show(rev).unwrap();
+        let show = read_show(&dir).unwrap();
+        assert_eq!(show.writer.brief, "version one — Ada will not put it on");
+        assert!(show.rev > rev);
+        let err = crate::restore_show(9999).unwrap_err().to_string();
+        assert!(err.contains("no snapshot"), "{err}");
     }
 }

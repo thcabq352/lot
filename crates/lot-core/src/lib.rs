@@ -7,30 +7,51 @@ pub const SHOW_FILE: &str = "show.json";
 
 mod brain;
 mod breakdown;
+mod caps;
 mod dailies;
 mod doctor;
+mod finish;
+mod help;
 mod model;
+mod motion;
 mod packs;
 mod parse;
 mod show;
+mod slate;
+mod snapshot;
+mod stage;
 mod stems;
 mod stills;
 
 pub use brain::{
-    complete_chat, draft_fountain, draft_user_prompt, revise_fountain, Completion, Provenance,
+    complete_chat, complete_vision, draft_fountain, draft_user_prompt, hash_prompt, probe_ollama,
+    revise_fountain, Completion, OllamaProbe, Provenance,
 };
-pub use breakdown::{breakdown_parse, breakdown_summary, picture_lock, slate_set, wall_add};
+pub use breakdown::{breakdown_parse, breakdown_summary, picture_lock, wall_add};
+pub use caps::{
+    active as active_caps, clear_caps, parse_caps, set_caps, with_caps, Cap, Caps,
+};
 pub use dailies::{dailies_circle, dailies_export, dailies_ingest};
 pub use doctor::Doctor;
-pub use model::{Beat, MediaItem, Scene, Shot, Take};
+pub use finish::finish_pickup;
+pub use help::{help_plain, help_spec};
+pub use model::{
+    Beat, FinishState, MediaItem, Scene, Shot, SlateLora, SlateState, StageMark, Take,
+};
+pub use motion::{motion_analyze, motion_export, motion_marks, motion_plate};
 pub use show::{
     create_show, current_show_path, draft_screenplay, lock_writer, open_show, read_show,
     replace_cast, replace_cast_json, require_current, revise_screenplay, set_brief,
     set_current_show, set_style, unlock_writer, upsert_cast, CastMember, Show, ShowError, Writer,
     SCREENPLAY_FILE,
 };
+pub use slate::{slate_compile, slate_lora, slate_set, slate_target};
+pub use snapshot::{restore_show, snapshot_list, snapshot_show};
+pub use stage::{stage_camera, stage_export, stage_place};
 pub use stems::{stems_soundtrack, stems_vo, Stems};
-pub use stills::{board_export, stills_generate};
+pub use stills::{
+    board_export, comfy_workflow_ready, resolve_comfy_workflow, stills_describe, stills_generate,
+};
 
 /// Kernel status — CLI `--json` and MCP `lot_status` share this shape.
 #[derive(Debug, Serialize)]
@@ -48,6 +69,7 @@ pub struct Status {
     pub scenes: Option<usize>,
     pub shots: Option<usize>,
     pub takes: Option<usize>,
+    pub cap: Vec<String>,
     pub doctor: Doctor,
     pub error: Option<String>,
 }
@@ -67,6 +89,7 @@ impl Status {
     pub fn bootstrap() -> Self {
         let doctor = Doctor::probe();
         let renderer = doctor.renderer;
+        let cap = crate::caps::active().names();
         match current_show_path() {
             Ok(Some(p)) => match read_show(&p) {
                 Ok(show) => Self {
@@ -83,6 +106,7 @@ impl Status {
                     scenes: Some(show.scenes.len()),
                     shots: Some(show.shots.len()),
                     takes: Some(show.takes.len()),
+                    cap: cap.clone(),
                     doctor,
                     error: None,
                 },
@@ -100,6 +124,7 @@ impl Status {
                     scenes: None,
                     shots: None,
                     takes: None,
+                    cap: cap.clone(),
                     doctor,
                     error: Some(e.to_string()),
                 },
@@ -118,6 +143,7 @@ impl Status {
                 scenes: None,
                 shots: None,
                 takes: None,
+                cap,
                 doctor,
                 error: None,
             },
@@ -135,6 +161,7 @@ impl Status {
                 scenes: None,
                 shots: None,
                 takes: None,
+                cap,
                 doctor,
                 error: Some(e.to_string()),
             },

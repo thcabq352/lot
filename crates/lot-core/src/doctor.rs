@@ -11,9 +11,19 @@ pub struct Doctor {
     pub comfy: bool,
     pub grok_configured: bool,
     pub local_configured: bool,
+    pub ollama: bool,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub ollama_llm: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub ollama_vision: Option<String>,
     pub vo_tts: bool,
     pub soundtrack_cmd: bool,
     pub stills_comfy_workflow: bool,
+    pub prompt_server: bool,
+    pub motion_previs: bool,
+    pub motion_cmd: bool,
+    pub blockout: bool,
+    pub upscale_cmd: bool,
     pub renderer: &'static str,
 }
 
@@ -23,6 +33,7 @@ impl Doctor {
         let ffprobe = on_path("ffprobe");
         let comfy = comfy_up();
         let grok_configured = grok_present();
+        let ollama = crate::brain::probe_ollama();
         let local_configured = std::env::var("LOT_LOCAL_BASE_URL")
             .ok()
             .map(|s| !s.trim().is_empty())
@@ -30,21 +41,36 @@ impl Doctor {
             || std::env::var("LOT_LOCAL_MODEL")
                 .ok()
                 .map(|s| !s.trim().is_empty())
-                .unwrap_or(false);
+                .unwrap_or(false)
+            || ollama.up;
         Self {
             ffmpeg,
             ffprobe,
             comfy,
             grok_configured,
             local_configured,
+            ollama: ollama.up,
+            ollama_llm: ollama.llm,
+            ollama_vision: ollama.vision,
             vo_tts: crate::stems::vo_backend_name().is_some(),
             soundtrack_cmd: std::env::var("LOT_SOUNDTRACK_CMD")
                 .ok()
                 .map(|s| !s.trim().is_empty())
                 .unwrap_or(false),
-            stills_comfy_workflow: std::env::var("LOT_COMFY_WORKFLOW")
+            stills_comfy_workflow: crate::stills::comfy_workflow_ready(),
+            prompt_server: std::env::var("LOT_PROMPT_SERVER")
                 .ok()
-                .map(|p| std::path::Path::new(p.trim()).is_file())
+                .map(|s| !s.trim().is_empty())
+                .unwrap_or(false),
+            motion_previs: crate::motion::motion_previs_control().is_some(),
+            motion_cmd: std::env::var("LOT_MOTION_CMD")
+                .ok()
+                .map(|s| !s.trim().is_empty())
+                .unwrap_or(false),
+            blockout: crate::stage::blockout_control().is_some(),
+            upscale_cmd: std::env::var("LOT_UPSCALE_CMD")
+                .ok()
+                .map(|s| !s.trim().is_empty())
                 .unwrap_or(false),
             renderer: if comfy { "comfy" } else { "unavailable" },
         }
