@@ -32,6 +32,7 @@ mod snapshot;
 mod stage;
 mod stems;
 mod stills;
+mod undo;
 
 pub use agent::{clear_agent, current as current_agent, set_agent, with_agent};
 pub use audit::{export_log, last_event, mutation_json, show_log, EventMeta};
@@ -78,6 +79,7 @@ pub use stems::{stems_soundtrack, stems_vo, Stems};
 pub use stills::{
     board_export, comfy_workflow_ready, resolve_comfy_workflow, stills_describe, stills_generate,
 };
+pub use undo::undo_show;
 
 /// Kernel status — CLI `--json` and MCP `lot_status` share this shape.
 #[derive(Debug, Serialize)]

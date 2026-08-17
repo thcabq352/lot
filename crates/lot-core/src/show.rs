@@ -443,11 +443,33 @@ fn write_fountain(
 }
 
 pub(crate) fn write_show(dir: &Path, show: &Show) -> Result<(), ShowError> {
+    journal_previous(dir)?;
     let path = dir.join(SHOW_FILE);
     let tmp = dir.join(".show.json.tmp");
     let body = serde_json::to_string_pretty(show)?;
     fs::write(&tmp, body)?;
     fs::rename(&tmp, path)?;
+    Ok(())
+}
+
+/// Copy the live show (and fountain) to `journal/rev-{n}` before overwrite.
+fn journal_previous(dir: &Path) -> Result<(), ShowError> {
+    let path = dir.join(SHOW_FILE);
+    if !path.is_file() {
+        return Ok(());
+    }
+    let raw = fs::read_to_string(&path)?;
+    let old: Show = serde_json::from_str(&raw)?;
+    let dest = dir.join("journal").join(format!("rev-{}", old.rev));
+    if dest.join(SHOW_FILE).is_file() {
+        return Ok(());
+    }
+    fs::create_dir_all(&dest)?;
+    fs::copy(&path, dest.join(SHOW_FILE))?;
+    let fountain = dir.join(SCREENPLAY_FILE);
+    if fountain.is_file() {
+        fs::copy(&fountain, dest.join(SCREENPLAY_FILE))?;
+    }
     Ok(())
 }
 
@@ -1247,6 +1269,32 @@ mod tests {
         assert!(show.rev > rev);
         let err = crate::restore_show(9999).unwrap_err().to_string();
         assert!(err.contains("no snapshot"), "{err}");
+    }
+
+    #[test]
+    fn undo_last_event_restores_brief_without_snapshot() {
+        let _g = ENV.lock().unwrap_or_else(|e| e.into_inner());
+        let (dir, _) = setup_show("Undo");
+        let err = crate::undo_show().unwrap_err().to_string();
+        assert!(err.starts_with("nothing to undo"), "{err}");
+        crate::set_brief("Ada waits by the tent.").unwrap();
+        crate::set_brief("She puts it on.").unwrap();
+        assert_eq!(read_show(&dir).unwrap().writer.brief, "She puts it on.");
+        let (undo_dir, show, undid) = crate::undo_show().unwrap();
+        assert_eq!(undo_dir, dir);
+        assert_eq!(show.writer.brief, "Ada waits by the tent.");
+        assert!(undid.starts_with("ev-"), "{undid}");
+        let ev = crate::audit::last_event(&dir).expect("undo event");
+        assert_eq!(ev.kind, "show.undo");
+        let err = crate::undo_show().unwrap_err().to_string();
+        assert!(err.starts_with("nothing to undo"), "{err}");
+        crate::snapshot_show().unwrap();
+        crate::set_brief("third line").unwrap();
+        crate::undo_show().unwrap();
+        assert_eq!(
+            read_show(&dir).unwrap().writer.brief,
+            "Ada waits by the tent."
+        );
     }
 
     #[test]

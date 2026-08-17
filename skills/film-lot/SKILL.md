@@ -67,7 +67,7 @@ If `doctor.stills_comfy_workflow` is false, Comfy stills will fail honestly — 
 9. **Stems** — soundtrack cue + attach or `LOT_SOUNDTRACK_CMD`; VO generate (SAPI / piper / espeak / say) or attach. Never a fake track.
 10. **Finish / Cut** — optional `finish --upscale --fps`; FCPXML interchange. Missing engine → `no finish —` and no stub.
 
-`lot snapshot` / `lot restore --rev` before a risky revise. `lot handoff` (dry-run) before leaving a phase; `lot handoff --commit` only when ready. `lot lock` / `lot unlock` when sharing a show. `lot budget --spend` / `--render` before a spendy generate. `lot help --json` is the contract.
+`lot snapshot` / `lot restore --rev` before a risky revise. `lot undo` reverts the last write from the event log (no snapshot needed). `lot handoff` (dry-run) before leaving a phase; `lot handoff --commit` only when ready. `lot lock` / `lot unlock` when sharing a show. `lot budget --spend` / `--render` before a spendy generate. `lot help --json` is the contract.
 
 ## Stills lock vs hunt
 
