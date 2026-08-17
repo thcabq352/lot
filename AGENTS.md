@@ -157,6 +157,19 @@ No soundtrack engine → `no soundtrack engine —` and **no** silent stub. No T
 - `crates/lot-cli` — binary `lot`
 - `crates/lot-mcp` — stdio MCP (`lot mcp`)
 
+## Agent box
+
+Needs **Rust 1.85+** (crates.io edition 2024). This shop pins `1.97.1` in `rust-toolchain.toml`.
+
+```
+rustup update stable
+rustup default stable
+cargo fetch --locked
+cargo build --workspace --locked
+```
+
+No start services. `lot status --json` / `lot doctor --json` must work without Comfy, Ollama, Grok, or a GPU. ffmpeg is enough for doctor and `lot finish`.
+
 ## Rules
 
 1. Agent first. Same verbs on CLI and MCP.
