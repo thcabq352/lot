@@ -10,6 +10,7 @@ mod audit;
 mod brain;
 mod breakdown;
 mod budget;
+mod cancel;
 mod caps;
 mod dailies;
 mod detail;
@@ -40,6 +41,10 @@ pub use brain::{
 };
 pub use breakdown::{breakdown_parse, breakdown_summary, picture_lock, wall_add};
 pub use budget::{set_budget, Budget};
+pub use cancel::{
+    begin_request, check as check_cancel, clear as clear_cancel, end_request, from_notification,
+    is_cancelled, request_cancel, run_interruptible, CANCELLED_MSG,
+};
 pub use caps::{active as active_caps, clear_caps, parse_caps, set_caps, with_caps, Cap, Caps};
 pub use dailies::{dailies_circle, dailies_export, dailies_ingest, IngestReport};
 pub use detail::{

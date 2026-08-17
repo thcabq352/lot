@@ -387,6 +387,7 @@ pub fn unlock_writer() -> Result<(PathBuf, Show), ShowError> {
 }
 
 pub fn draft_screenplay() -> Result<(PathBuf, Show), ShowError> {
+    crate::cancel::check()?;
     let (dir, mut show) = require_unlocked()?;
     if show.writer.brief.trim().is_empty() {
         return Err(ShowError::Msg(
@@ -400,6 +401,7 @@ pub fn draft_screenplay() -> Result<(PathBuf, Show), ShowError> {
 }
 
 pub fn revise_screenplay(notes: &str) -> Result<(PathBuf, Show), ShowError> {
+    crate::cancel::check()?;
     let (dir, mut show) = require_unlocked()?;
     let path = dir.join(SCREENPLAY_FILE);
     if !path.is_file() {
@@ -1514,5 +1516,96 @@ mod tests {
             .unwrap_err()
             .to_string();
         assert!(err.contains("jailed"), "{err}");
+    }
+
+    #[test]
+    fn cancel_stills_generate_writes_no_png() {
+        let _g = ENV.lock().unwrap_or_else(|e| e.into_inner());
+        let (dir, mut show) = setup_show("CancelStills");
+        isolate_brain();
+        show.shots.push(crate::model::Shot {
+            id: "sh-1".into(),
+            num: "01".into(),
+            name: "tent".into(),
+            prompt: "wide tent, neon rain".into(),
+            ..crate::model::Shot::default()
+        });
+        write_show(&dir, &show).unwrap();
+        crate::cancel::clear();
+        crate::cancel::request_cancel(None);
+        let err = crate::stills_generate("01", "grok", None)
+            .unwrap_err()
+            .to_string();
+        assert!(
+            err.starts_with(crate::CANCELLED_MSG),
+            "expected cancelled, got {err}"
+        );
+        let stills = dir.join("stills");
+        let pngs = if stills.is_dir() {
+            fs::read_dir(&stills)
+                .unwrap()
+                .filter_map(|e| e.ok())
+                .filter(|e| {
+                    e.path()
+                        .extension()
+                        .and_then(|s| s.to_str())
+                        .is_some_and(|s| s == "png" || s == "jpg" || s == "webp")
+                })
+                .count()
+        } else {
+            0
+        };
+        assert_eq!(pngs, 0, "cancelled stills must not write an image");
+        crate::cancel::clear();
+    }
+
+    #[test]
+    fn cancel_draft_writes_no_fountain() {
+        let _g = ENV.lock().unwrap_or_else(|e| e.into_inner());
+        let (dir, _) = setup_show("CancelDraft");
+        isolate_brain();
+        crate::set_brief("A woman waits by a neon tent.").unwrap();
+        crate::cancel::clear();
+        crate::cancel::request_cancel(None);
+        let err = crate::draft_screenplay().unwrap_err().to_string();
+        assert!(
+            err.starts_with(crate::CANCELLED_MSG),
+            "expected cancelled, got {err}"
+        );
+        assert!(
+            !dir.join(SCREENPLAY_FILE).is_file(),
+            "cancelled draft must not write fountain"
+        );
+        crate::cancel::clear();
+    }
+
+    #[test]
+    fn cancel_finish_writes_no_stub() {
+        let _g = ENV.lock().unwrap_or_else(|e| e.into_inner());
+        let (dir, _) = setup_show("CancelFinish");
+        let clip = dir.join("media").join("01-foo.mp4");
+        fs::create_dir_all(clip.parent().unwrap()).unwrap();
+        fs::write(&clip, b"not-a-real-mp4").unwrap();
+        crate::cancel::clear();
+        crate::cancel::request_cancel(None);
+        let err = crate::finish_pickup(Some(&clip), true, Some("24"))
+            .unwrap_err()
+            .to_string();
+        assert!(
+            err.starts_with(crate::CANCELLED_MSG),
+            "expected cancelled, got {err}"
+        );
+        let finish = dir.join("finish");
+        let stubs = if finish.is_dir() {
+            fs::read_dir(&finish)
+                .unwrap()
+                .filter_map(|e| e.ok())
+                .filter(|e| e.path().is_file())
+                .count()
+        } else {
+            0
+        };
+        assert_eq!(stubs, 0, "cancelled finish must not write a stub");
+        crate::cancel::clear();
     }
 }

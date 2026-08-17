@@ -7,10 +7,10 @@ use crate::ShowError;
 use base64::Engine;
 use serde::{Deserialize, Serialize};
 use serde_json::{json, Value};
+use sha2::{Digest, Sha256};
 use std::env;
 use std::fs;
 use std::path::PathBuf;
-use sha2::{Digest, Sha256};
 use std::time::{Duration, Instant};
 
 const XAI_BASE: &str = "https://api.x.ai/v1";
@@ -243,14 +243,21 @@ pub fn revise_fountain(show: &Show, current: &str, notes: &str) -> Result<Comple
 }
 
 pub fn complete_chat(system: &str, user: &str) -> Result<Completion, ShowError> {
+    crate::cancel::check()?;
     let candidates = resolve_candidates()?;
     if candidates.is_empty() {
         return Err(ShowError::Msg(no_brain_message(&[])));
     }
     let mut errors: Vec<String> = Vec::new();
     for c in candidates {
+        crate::cancel::check()?;
         let started = Instant::now();
-        match chat_completions(&c, system, user) {
+        let c_run = c.clone();
+        let sys = system.to_string();
+        let usr = user.to_string();
+        match crate::cancel::run_interruptible(move || {
+            chat_completions(&c_run, &sys, &usr).map_err(ShowError::Msg)
+        }) {
             Ok(text) => {
                 let text = strip_fences(&text);
                 if text.trim().is_empty() {
@@ -272,7 +279,13 @@ pub fn complete_chat(system: &str, user: &str) -> Result<Completion, ShowError> 
                         .with_duration_ms(elapsed_ms(started)),
                 });
             }
-            Err(e) => errors.push(format!("{} ({}): {e}", c.backend, c.model)),
+            Err(e) => {
+                let msg = e.to_string();
+                if msg.starts_with(crate::cancel::CANCELLED_MSG) {
+                    return Err(e);
+                }
+                errors.push(format!("{} ({}): {msg}", c.backend, c.model));
+            }
         }
     }
     Err(ShowError::Msg(no_brain_message(&errors)))

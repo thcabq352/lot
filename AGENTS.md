@@ -156,7 +156,7 @@ lot stills describe --shot 01 --json                   # Grok vision or Ollama V
 lot board export --json
 ```
 
-`--backend` is required: `grok` or `comfy`. No silent swap. No fake PNG. Prompt from slate or `--prompt`. Unset `LOT_COMFY_WORKFLOW` uses `crates/lot-core/packs/comfy-flux-still.json`. `off` disables the pack. Every generate records provenance: backend, model, seed, prompt hash, duration, VRAM cap (`LOT_VRAM_CAP` or Comfy `vram_total`). Describe looks at the still, a plate frame, or `--file`. No vision → `no vision —` and **no** invented look.
+`--backend` is required: `grok` or `comfy`. No silent swap. No fake PNG. Prompt from slate or `--prompt`. Unset `LOT_COMFY_WORKFLOW` uses `crates/lot-core/packs/comfy-flux-still.json`. `off` disables the pack. Every generate records provenance: backend, model, seed, prompt hash, duration, VRAM cap (`LOT_VRAM_CAP` or Comfy `vram_total`). Describe looks at the still, a plate frame, or `--file`. No vision → `no vision —` and **no** invented look. MCP `notifications/cancelled` stops stills generate, finish, and draft (`cancelled —`; no fake PNG / fountain / finish file).
 
 ## Slate (canon + per-target compile)
 

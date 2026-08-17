@@ -8,7 +8,7 @@ pub fn help_spec() -> Value {
         "version": crate::VERSION,
         "door": ["cli", "mcp"],
         "school_default": "off",
-        "notice": "Flags only. No TTY prompts. Exit 0 = ok. Do not click folder dialogs. --agent / LOT_AGENT / MCP agent: who writes (unset = human, no auto-claim). --cap / LOT_CAP / MCP cap: read|write|render|export|spend (unset = all). --detail full / MCP detail=full dumps shot prompts and cards; default --json is lean (ids, counts, media path+sha256+duration). Jail = this show.lot + LOT_MEDIA_ROOTS; fountain is scene text (AC-013). Show budget: lot budget --spend/--render (hit cap → stop).",
+        "notice": "Flags only. No TTY prompts. Exit 0 = ok. Do not click folder dialogs. --agent / LOT_AGENT / MCP agent: who writes (unset = human, no auto-claim). --cap / LOT_CAP / MCP cap: read|write|render|export|spend (unset = all). --detail full / MCP detail=full dumps shot prompts and cards; default --json is lean (ids, counts, media path+sha256+duration). Jail = this show.lot + LOT_MEDIA_ROOTS; fountain is scene text (AC-013). Show budget: lot budget --spend/--render (hit cap → stop). MCP notifications/cancelled stops stills generate, finish, and draft (cancelled —; no fake PNG/wav/fountain).",
         "verbs": [
             verb("lot status", "lot_status", "kernel", "First call. Kernel + current show."),
             verb("lot create <dir> --name", "lot_create", "kernel", "Create a show.lot and make it current."),
@@ -33,7 +33,7 @@ pub fn help_spec() -> Value {
             verb("lot writer brief --text", "lot_writer_brief", "writer", "Set the brief."),
             verb("lot writer style --genre --living --canon --format", "lot_writer_style", "writer", "Dated packs. Influence, not endorsement."),
             verb("lot writer cast --name", "lot_writer_cast", "writer", "Add/update a character or replace via --from-json."),
-            verb("lot writer draft", "lot_writer_draft", "writer", "Fountain via Grok or Ollama. No brain → no fake script."),
+            verb("lot writer draft", "lot_writer_draft", "writer", "Fountain via Grok or Ollama. No brain → no fake script. MCP cancel → cancelled — and no fountain."),
             verb("lot writer revise --notes", "lot_writer_revise", "writer", "Revise existing fountain."),
             verb("lot writer lock", "lot_writer_lock", "writer", "Lock the writer contract."),
             verb("lot writer unlock", "lot_writer_unlock", "writer", "Unlock the writer."),
@@ -48,7 +48,7 @@ pub fn help_spec() -> Value {
             verb("lot motion marks --shot --move --notes", "lot_motion_marks", "motion", "Camera / performance marks. No MediaPipe."),
             verb("lot motion export", "lot_motion_export", "motion", "motion/previs.json. No fake OpenPose."),
             verb("lot motion analyze --shot", "lot_motion_analyze", "motion", "ffprobe or LOT_MOTION_CMD."),
-            verb("lot stills generate --shot --backend", "lot_stills_generate", "board", "backend grok|comfy. Records seed, prompt hash, duration, VRAM cap. MCP progress when _meta.progressToken is set. Unset LOT_COMFY_WORKFLOW uses packs/comfy-flux-still.json. No silent swap. No fake PNG."),
+            verb("lot stills generate --shot --backend", "lot_stills_generate", "board", "backend grok|comfy. Records seed, prompt hash, duration, VRAM cap. MCP progress when _meta.progressToken is set. MCP notifications/cancelled returns cancelled — and writes no PNG. Unset LOT_COMFY_WORKFLOW uses packs/comfy-flux-still.json. No silent swap. No fake PNG."),
             verb("lot stills describe --shot", "lot_stills_describe", "board", "Look at a still/plate. Grok vision or Ollama VL. No invented look."),
             verb("lot board export", "lot_board_export", "board", "board/board.json from shots + stills + slate."),
             verb("lot slate set --shot --prompt", "lot_slate_set", "slate", "Canon prompt. --target writes a rewrite only."),
@@ -60,7 +60,7 @@ pub fn help_spec() -> Value {
             verb("lot dailies export", "lot_dailies_export", "dailies", "FCPXML of circled takes."),
             verb("lot stems soundtrack --brief", "lot_stems_soundtrack", "stems", "Cue sheet. --generate needs LOT_SOUNDTRACK_CMD. Never a silent stub."),
             verb("lot stems vo --text --generate", "lot_stems_vo", "stems", "SAPI / piper / espeak / say, or --file."),
-            verb("lot finish --upscale --fps", "lot_finish", "cut", "Optional pickup. ffmpeg or LOT_UPSCALE_CMD. No stub."),
+            verb("lot finish --upscale --fps", "lot_finish", "cut", "Optional pickup. ffmpeg or LOT_UPSCALE_CMD. No stub. MCP cancel kills the child and writes no file."),
             verb("lot cut export", "lot_cut_export", "cut", "Same FCPXML interchange."),
             verb("lot mcp", "", "kernel", "NDJSON JSON-RPC 2.0 on stdin/stdout.")
         ]
@@ -110,6 +110,13 @@ mod tests {
         assert!(
             v["notice"].as_str().unwrap().contains("detail=full"),
             "help notice must name detail=full"
+        );
+        assert!(
+            v["notice"]
+                .as_str()
+                .unwrap()
+                .contains("notifications/cancelled"),
+            "help notice must name MCP cancel"
         );
     }
 }
