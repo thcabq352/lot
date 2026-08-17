@@ -1,0 +1,7 @@
+# Lot — Cursor
+
+- Agent first. `lot status --json` before guessing.
+- Do not open video-buddy-suite unless writing an adapter.
+- No file-picker APIs. Flags and paths only.
+- School off unless the user enabled it.
+- rustfmt + `cargo test --workspace` before you call it done.

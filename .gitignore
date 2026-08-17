@@ -1,0 +1,13 @@
+/target
+**/*.rs.bk
+.DS_Store
+Thumbs.db
+*.pdb
+.idea/
+.vscode/
+# local show files — never commit a production show
+/shows/
+*.lot/
+.env
+.env.*
+!/.env.example

@@ -1,0 +1,15 @@
+[package]
+name = "lot-cli"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+description = "lot — CLI face. Same verbs as MCP."
+
+[[bin]]
+name = "lot"
+path = "src/main.rs"
+
+[dependencies]
+lot-core = { workspace = true }
+clap = { workspace = true }
+serde_json = { workspace = true }

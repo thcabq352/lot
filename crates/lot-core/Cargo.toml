@@ -1,0 +1,10 @@
+[package]
+name = "lot-core"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+description = "Lot kernel: status, schema, no GUI."
+
+[dependencies]
+serde = { workspace = true }
+serde_json = { workspace = true }
