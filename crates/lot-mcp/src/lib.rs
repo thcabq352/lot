@@ -1,8 +1,46 @@
 #![recursion_limit = "512"]
 
 use serde_json::{json, Value};
+use std::cell::RefCell;
 use std::io::{self, BufRead, Write};
 use std::path::Path;
+
+thread_local! {
+    static PROGRESS_TOKEN: RefCell<Option<Value>> = const { RefCell::new(None) };
+    static PROGRESS: RefCell<Vec<Value>> = const { RefCell::new(Vec::new()) };
+}
+
+/// Drain progress notifications emitted during the last `handle` call.
+pub fn drain_progress() -> Vec<Value> {
+    PROGRESS.with(|p| p.replace(Vec::new()))
+}
+
+fn set_progress_token(tok: Option<Value>) {
+    PROGRESS_TOKEN.with(|t| *t.borrow_mut() = tok);
+}
+
+fn emit_progress(progress: f64, total: Option<f64>, message: &str) {
+    let tok = PROGRESS_TOKEN.with(|t| t.borrow().clone());
+    let Some(token) = tok else {
+        return;
+    };
+    let mut params = serde_json::Map::new();
+    params.insert("progressToken".into(), token);
+    params.insert("progress".into(), json!(progress));
+    if let Some(t) = total {
+        params.insert("total".into(), json!(t));
+    }
+    if !message.is_empty() {
+        params.insert("message".into(), json!(message));
+    }
+    PROGRESS.with(|p| {
+        p.borrow_mut().push(json!({
+            "jsonrpc": "2.0",
+            "method": "notifications/progress",
+            "params": Value::Object(params)
+        }));
+    });
+}
 
 const PROTOCOL: &str = "2024-11-05";
 
@@ -20,6 +58,9 @@ pub fn run_stdio() -> io::Result<()> {
             Err(_) => continue,
         };
         if let Some(resp) = handle(&msg) {
+            for note in drain_progress() {
+                writeln!(stdout, "{}", note)?;
+            }
             writeln!(stdout, "{}", resp)?;
             stdout.flush()?;
         }
@@ -40,6 +81,7 @@ pub fn handle(msg: &Value) -> Option<Value> {
             }),
         )),
         "notifications/initialized" => None,
+        "notifications/cancelled" => None,
         "ping" => Some(ok(id, json!({}))),
         "tools/list" => Some(ok(id, json!({ "tools": tools() }))),
         "tools/call" => Some(ok(id, call(msg.get("params")))),
@@ -713,11 +755,19 @@ fn call(params: Option<&Value>) -> Value {
         .and_then(|v| v.as_str())
         .map(|s| s.to_string());
     let full = lot_core::detail_full_value(args.get("detail"));
-    lot_core::with_caps(caps, || {
+    let token = params
+        .and_then(|p| p.get("_meta"))
+        .and_then(|m| m.get("progressToken"))
+        .cloned()
+        .or_else(|| args.get("progressToken").cloned());
+    set_progress_token(token);
+    let out = lot_core::with_caps(caps, || {
         lot_core::with_agent(agent, || {
             lot_core::with_detail(full, || dispatch(name, &args))
         })
-    })
+    });
+    set_progress_token(None);
+    out
 }
 
 fn cap_from_args(args: &Value) -> Result<Option<lot_core::Caps>, String> {
@@ -951,18 +1001,22 @@ fn dispatch(name: &str, args: &Value) -> Value {
             }
         }),
         "lot_stills_generate" => with_path(&args, || {
+            emit_progress(0.0, Some(1.0), "stills generate");
             let shot = args.get("shot").and_then(|v| v.as_str()).unwrap_or("");
             let backend = args.get("backend").and_then(|v| v.as_str()).unwrap_or("");
             let prompt = args.get("prompt").and_then(|v| v.as_str());
             match lot_core::stills_generate(shot, backend, prompt) {
-                Ok((dir, show)) => mut_ok(
-                    &dir,
-                    &show,
-                    json!({
-                        "stills_backend": show.stills_backend,
-                        "shots": show.shots,
-                    }),
-                ),
+                Ok((dir, show)) => {
+                    emit_progress(1.0, Some(1.0), "stills generate");
+                    mut_ok(
+                        &dir,
+                        &show,
+                        json!({
+                            "stills_backend": show.stills_backend,
+                            "shots": show.shots,
+                        }),
+                    )
+                }
                 Err(e) => tool_err(&e.to_string()),
             }
         }),
@@ -1067,6 +1121,7 @@ fn dispatch(name: &str, args: &Value) -> Value {
             }
         }),
         "lot_finish" => with_path(&args, || {
+            emit_progress(0.0, Some(1.0), "finish");
             let file = args.get("file").and_then(|v| v.as_str()).map(Path::new);
             let upscale = args
                 .get("upscale")
@@ -1074,14 +1129,17 @@ fn dispatch(name: &str, args: &Value) -> Value {
                 .unwrap_or(false);
             let fps = args.get("fps").and_then(|v| v.as_str());
             match lot_core::finish_pickup(file, upscale, fps) {
-                Ok((dir, show, out)) => mut_ok(
-                    &dir,
-                    &show,
-                    json!({
-                        "finish": show.finish,
-                        "file": out.display().to_string(),
-                    }),
-                ),
+                Ok((dir, show, out)) => {
+                    emit_progress(1.0, Some(1.0), "finish");
+                    mut_ok(
+                        &dir,
+                        &show,
+                        json!({
+                            "finish": show.finish,
+                            "file": out.display().to_string(),
+                        }),
+                    )
+                }
                 Err(e) => tool_err(&e.to_string()),
             }
         }),
@@ -1523,6 +1581,7 @@ mod tests {
     #[test]
     fn notify_no_reply() {
         assert!(handle(&json!({"jsonrpc":"2.0","method":"notifications/initialized"})).is_none());
+        assert!(handle(&json!({"jsonrpc":"2.0","method":"notifications/cancelled"})).is_none());
     }
 
     fn call_body(name: &str, args: Value) -> Value {
@@ -1800,5 +1859,72 @@ mod tests {
         assert_eq!(second["rev"], rev);
         assert_eq!(second["resumed"], 1);
         assert_eq!(second["ingested"], 0);
+    }
+
+    #[test]
+    fn stills_generate_emits_progress_for_token() {
+        let root = std::env::temp_dir().join(format!(
+            "lot-mcp-progress-{}-{}",
+            std::process::id(),
+            std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .map(|d| d.as_nanos())
+                .unwrap_or(0)
+        ));
+        let _ = std::fs::remove_dir_all(&root);
+        std::fs::create_dir_all(&root).unwrap();
+        std::env::set_var("LOT_HOME", root.join("home"));
+        std::env::remove_var("LOT_SHOW");
+        lot_core::clear_caps();
+        lot_core::clear_agent();
+
+        let show_dir = root.join("show");
+        call_body(
+            "lot_create",
+            json!({ "path": show_dir.display().to_string(), "name": "Progress" }),
+        );
+        let script = root.join("script.txt");
+        std::fs::write(
+            &script,
+            "INT. TENT - NIGHT\n\nADA (quietly)\nDon't put it on.\n",
+        )
+        .unwrap();
+        call_body(
+            "lot_breakdown_import",
+            json!({
+                "path": show_dir.display().to_string(),
+                "file": script.display().to_string()
+            }),
+        );
+        call_body(
+            "lot_slate_set",
+            json!({
+                "path": show_dir.display().to_string(),
+                "shot": "01",
+                "prompt": "wide tent, neon rain"
+            }),
+        );
+        let _ = drain_progress();
+        let raw = handle(&json!({
+            "jsonrpc":"2.0","id":12,"method":"tools/call",
+            "params":{
+                "name":"lot_stills_generate",
+                "arguments":{
+                    "path": show_dir.display().to_string(),
+                    "shot":"01",
+                    "backend":"grok"
+                },
+                "_meta": { "progressToken": "stills-1" }
+            }
+        }))
+        .unwrap();
+        let notes = drain_progress();
+        assert!(
+            !notes.is_empty(),
+            "expected progress notifications, got {notes:?} result={raw}"
+        );
+        assert_eq!(notes[0]["method"], "notifications/progress");
+        assert_eq!(notes[0]["params"]["progressToken"], "stills-1");
+        assert!(notes[0]["params"]["progress"].as_f64().is_some());
     }
 }

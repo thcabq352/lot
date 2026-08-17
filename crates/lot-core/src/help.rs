@@ -48,7 +48,7 @@ pub fn help_spec() -> Value {
             verb("lot motion marks --shot --move --notes", "lot_motion_marks", "motion", "Camera / performance marks. No MediaPipe."),
             verb("lot motion export", "lot_motion_export", "motion", "motion/previs.json. No fake OpenPose."),
             verb("lot motion analyze --shot", "lot_motion_analyze", "motion", "ffprobe or LOT_MOTION_CMD."),
-            verb("lot stills generate --shot --backend", "lot_stills_generate", "board", "backend grok|comfy. Records seed, prompt hash, duration, VRAM cap. Unset LOT_COMFY_WORKFLOW uses packs/comfy-flux-still.json. No silent swap. No fake PNG."),
+            verb("lot stills generate --shot --backend", "lot_stills_generate", "board", "backend grok|comfy. Records seed, prompt hash, duration, VRAM cap. MCP progress when _meta.progressToken is set. Unset LOT_COMFY_WORKFLOW uses packs/comfy-flux-still.json. No silent swap. No fake PNG."),
             verb("lot stills describe --shot", "lot_stills_describe", "board", "Look at a still/plate. Grok vision or Ollama VL. No invented look."),
             verb("lot board export", "lot_board_export", "board", "board/board.json from shots + stills + slate."),
             verb("lot slate set --shot --prompt", "lot_slate_set", "slate", "Canon prompt. --target writes a rewrite only."),
