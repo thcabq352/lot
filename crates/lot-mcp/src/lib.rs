@@ -1611,6 +1611,9 @@ mod tests {
         let body: Value = serde_json::from_str(text).unwrap();
         assert_eq!(body["name"], "lot");
         assert_eq!(body["door"], "mcp");
+        assert!(body["dirty"].is_array(), "{body}");
+        assert!(body["missing"].is_array(), "{body}");
+        assert!(body["missing_media"].is_array(), "{body}");
     }
 
     #[test]

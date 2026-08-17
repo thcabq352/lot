@@ -115,7 +115,7 @@ lot log --n 50 --json
 lot log --export --json
 ```
 
-Every write records `id`, `at`, `kind`, `who`, `rev`, `show_id`. `who` is `--agent` / `LOT_AGENT` or `human`. `lot status --json` includes `last_event`. Mutating `--json` includes `show_id`, `event_id`, `who`, `school`. `--export` writes `audit/export.jsonl` with tokens redacted (`[redacted]`). Needs `export` cap.
+Every write records `id`, `at`, `kind`, `who`, `rev`, `show_id`. `who` is `--agent` / `LOT_AGENT` or `human`. `lot status --json` includes `last_event`, `dirty` (sections with work), `missing` (current-phase handoff blockers), and `missing_media` (referenced paths that are not files). Mutating `--json` includes `show_id`, `event_id`, `who`, `school`. `--export` writes `audit/export.jsonl` with tokens redacted (`[redacted]`). Needs `export` cap.
 
 ## Handoff
 

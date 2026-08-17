@@ -1311,6 +1311,68 @@ mod tests {
     }
 
     #[test]
+    fn status_lists_dirty_missing_and_missing_media() {
+        let _g = ENV.lock().unwrap_or_else(|e| e.into_inner());
+        let (dir, _) = setup_show("StatusGaps");
+        let st = crate::Status::bootstrap();
+        assert_eq!(st.phase.as_deref(), Some("writer"));
+        assert!(
+            st.missing.iter().any(|s| s.contains("no brief")),
+            "fresh show missing: {:?}",
+            st.missing
+        );
+        assert!(
+            !st.dirty.contains(&"breakdown".into()),
+            "untouched breakdown should not be dirty: {:?}",
+            st.dirty
+        );
+
+        crate::set_brief("A woman waits by a neon tent.").unwrap();
+        let st = crate::Status::bootstrap();
+        assert!(
+            st.dirty.iter().any(|s| s == "writer"),
+            "brief should dirty writer: {:?}",
+            st.dirty
+        );
+        assert!(
+            st.missing.iter().any(|s| s.contains("no draft")),
+            "writer still missing draft: {:?}",
+            st.missing
+        );
+
+        let mut show = read_show(&dir).unwrap();
+        show.shots.push(crate::model::Shot {
+            id: "sh-1".into(),
+            num: "01".into(),
+            name: "tent".into(),
+            still_path: Some(dir.join("stills").join("gone.png").display().to_string()),
+            plate_path: Some(dir.join("motion").join("missing.mp4").display().to_string()),
+            ..crate::model::Shot::default()
+        });
+        show.takes.push(crate::model::Take {
+            id: "tk-1".into(),
+            shot_id: "sh-1".into(),
+            path: dir.join("media").join("nope.mp4").display().to_string(),
+            filename: "01-foo.mp4".into(),
+            sha256: String::new(),
+            duration_secs: None,
+            circled: false,
+        });
+        write_show(&dir, &show).unwrap();
+        let st = crate::Status::bootstrap();
+        let kinds: Vec<&str> = st.missing_media.iter().map(|m| m.kind.as_str()).collect();
+        assert!(
+            kinds.contains(&"still") && kinds.contains(&"plate") && kinds.contains(&"take"),
+            "missing_media kinds: {kinds:?} {:?}",
+            st.missing_media
+        );
+        assert!(st
+            .missing_media
+            .iter()
+            .any(|m| m.path.contains("gone.png") && m.shot.as_deref() == Some("01")));
+    }
+
+    #[test]
     fn jail_blocks_other_show_and_ac013_is_scene_text() {
         let _g = ENV.lock().unwrap_or_else(|e| e.into_inner());
         let (other, _) = setup_show("Other");

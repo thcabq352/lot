@@ -50,7 +50,7 @@ A show is a directory with `show.json` + `events.jsonl` + `media/`.
 1. `lot_status` (or `lot status --json`)
 2. `lot_doctor` (or `lot doctor --json`)
 
-Read `school`, `renderer`, `phase`, `cap`, `locked_by`, `agent`, `budget`, `last_event`, `doctor`. If `school.enabled` is false, skip all pedagogy. If `locked_by` is someone else, stop — do not clobber.
+Read `school`, `renderer`, `phase`, `dirty`, `missing`, `missing_media`, `cap`, `locked_by`, `agent`, `budget`, `last_event`, `doctor`. `missing` is the current-phase handoff gate. `dirty` is sections that already have work. `missing_media` is referenced paths that are not files. If `school.enabled` is false, skip all pedagogy. If `locked_by` is someone else, stop — do not clobber.
 
 If `doctor.stills_comfy_workflow` is false, Comfy stills will fail honestly — do not invent a PNG.
 

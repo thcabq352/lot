@@ -8,9 +8,9 @@ pub fn help_spec() -> Value {
         "version": crate::VERSION,
         "door": ["cli", "mcp"],
         "school_default": "off",
-        "notice": "Flags only. No TTY prompts. Exit 0 = ok. Do not click folder dialogs. --agent / LOT_AGENT / MCP agent: who writes (unset = human, no auto-claim). --cap / LOT_CAP / MCP cap: read|write|render|export|spend (unset = all). --detail full / MCP detail=full dumps shot prompts and cards; default --json is lean (ids, counts, media path+sha256+duration). Jail = this show.lot + LOT_MEDIA_ROOTS; fountain is scene text (AC-013). Show budget: lot budget --spend/--render (hit cap → stop). MCP notifications/cancelled stops stills generate, finish, and draft (cancelled —; no fake PNG/wav/fountain).",
+        "notice": "Flags only. No TTY prompts. Exit 0 = ok. Do not click folder dialogs. --agent / LOT_AGENT / MCP agent: who writes (unset = human, no auto-claim). --cap / LOT_CAP / MCP cap: read|write|render|export|spend (unset = all). --detail full / MCP detail=full dumps shot prompts and cards; default --json is lean (ids, counts, media path+sha256+duration). Jail = this show.lot + LOT_MEDIA_ROOTS; fountain is scene text (AC-013). Show budget: lot budget --spend/--render (hit cap → stop). MCP notifications/cancelled stops stills generate, finish, and draft (cancelled —; no fake PNG/wav/fountain). lot status --json includes dirty, missing, missing_media.",
         "verbs": [
-            verb("lot status", "lot_status", "kernel", "First call. Kernel + current show."),
+            verb("lot status", "lot_status", "kernel", "First call. Phase, dirty sections, missing (handoff blockers), missing_media, renderer, school."),
             verb("lot create <dir> --name", "lot_create", "kernel", "Create a show.lot and make it current."),
             verb("lot open <dir>", "lot_open", "kernel", "Open a show.lot and make it current."),
             verb("lot doctor", "lot_doctor", "kernel", "Probe ffmpeg, Comfy, brains, Studio, Blockout."),
@@ -117,6 +117,10 @@ mod tests {
                 .unwrap()
                 .contains("notifications/cancelled"),
             "help notice must name MCP cancel"
+        );
+        assert!(
+            v["notice"].as_str().unwrap().contains("missing_media"),
+            "help notice must name status missing_media"
         );
     }
 }
