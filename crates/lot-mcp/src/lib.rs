@@ -79,6 +79,22 @@ fn tools() -> Value {
                 },
                 "required": ["path"]
             }
+        },
+        {
+            "name": "lot_writer_brief",
+            "description": "Set the writer brief on the current show.",
+            "inputSchema": {
+                "type": "object",
+                "properties": {
+                    "text": { "type": "string", "description": "Brief / logline." }
+                },
+                "required": ["text"]
+            }
+        },
+        {
+            "name": "lot_writer_draft",
+            "description": "Write screenplay.fountain outline stub from the brief. Not a Grok draft yet.",
+            "inputSchema": { "type": "object", "properties": {} }
         }
     ])
 }
@@ -134,6 +150,30 @@ fn call(params: Option<&Value>) -> Value {
                 Err(e) => tool_err(&e.to_string()),
             }
         }
+        "lot_writer_brief" => {
+            let text = args.get("text").and_then(|v| v.as_str()).unwrap_or("");
+            if text.is_empty() {
+                return tool_err("text is required");
+            }
+            match lot_core::set_brief(text) {
+                Ok((dir, show)) => tool_ok(&json!({
+                    "ok": true,
+                    "show": dir.display().to_string(),
+                    "rev": show.rev,
+                    "brief": show.writer.brief,
+                })),
+                Err(e) => tool_err(&e.to_string()),
+            }
+        }
+        "lot_writer_draft" => match lot_core::draft_screenplay() {
+            Ok((dir, show)) => tool_ok(&json!({
+                "ok": true,
+                "show": dir.display().to_string(),
+                "rev": show.rev,
+                "draft": show.writer.draft_path,
+            })),
+            Err(e) => tool_err(&e.to_string()),
+        },
         "" => tool_err("tool name is required"),
         other => tool_err(&format!("Unknown tool: {other}")),
     }
@@ -195,6 +235,7 @@ mod tests {
         assert!(names.contains(&"lot_status"));
         assert!(names.contains(&"lot_create"));
         assert!(names.contains(&"lot_open"));
+        assert!(names.contains(&"lot_writer_brief"));
     }
 
     #[test]

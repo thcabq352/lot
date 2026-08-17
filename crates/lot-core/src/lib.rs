@@ -8,7 +8,8 @@ pub const SHOW_FILE: &str = "show.json";
 mod show;
 
 pub use show::{
-    create_show, current_show_path, open_show, read_show, set_current_show, Show, ShowError,
+    create_show, current_show_path, draft_screenplay, open_show, read_show, require_current,
+    set_brief, set_current_show, Show, ShowError, Writer,
 };
 
 /// Kernel status — CLI `--json` and MCP `lot_status` share this shape.

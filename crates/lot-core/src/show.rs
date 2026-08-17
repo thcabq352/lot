@@ -60,6 +60,20 @@ pub struct Show {
     pub shots: Vec<serde_json::Value>,
     #[serde(default)]
     pub takes: Vec<serde_json::Value>,
+    #[serde(default)]
+    pub writer: Writer,
+}
+
+#[derive(Debug, Clone, Default, Serialize, Deserialize)]
+pub struct Writer {
+    #[serde(default)]
+    pub brief: String,
+    #[serde(default)]
+    pub genres: Vec<String>,
+    #[serde(default)]
+    pub locked: bool,
+    #[serde(default)]
+    pub draft_path: Option<String>,
 }
 
 impl Show {
@@ -76,6 +90,7 @@ impl Show {
             scenes: Vec::new(),
             shots: Vec::new(),
             takes: Vec::new(),
+            writer: Writer::default(),
         }
     }
 }
@@ -129,6 +144,51 @@ pub fn read_show(dir: &Path) -> Result<Show, ShowError> {
         return Err(ShowError::Schema(show.schema));
     }
     Ok(show)
+}
+
+pub fn require_current() -> Result<(PathBuf, Show), ShowError> {
+    let dir = current_show_path()?
+        .ok_or_else(|| ShowError::Msg("no current show — lot create or lot open".into()))?;
+    let show = read_show(&dir)?;
+    Ok((dir, show))
+}
+
+pub fn set_brief(text: &str) -> Result<(PathBuf, Show), ShowError> {
+    let (dir, mut show) = require_current()?;
+    if show.writer.locked {
+        return Err(ShowError::Msg(
+            "writer locked — unlock before changing brief".into(),
+        ));
+    }
+    show.writer.brief = text.trim().to_string();
+    show.rev += 1;
+    show.updated_at = now_rfc3339();
+    write_show(&dir, &show)?;
+    append_event(&dir, "writer.brief", &show)?;
+    Ok((dir, show))
+}
+
+pub fn draft_screenplay() -> Result<(PathBuf, Show), ShowError> {
+    let (dir, mut show) = require_current()?;
+    if show.writer.brief.trim().is_empty() {
+        return Err(ShowError::Msg(
+            "no brief — lot writer brief --text \"...\"".into(),
+        ));
+    }
+    let fountain = format!(
+        "Title: {}\nCredit: Written by\nAuthor: Lot Writer (outline stub — Grok draft not wired)\nDraft date: {}\n\n= BRIEF\n\n{}\n\nFADE IN:\n\nINT. LOT - DAY\n\nAn outline waits for a real draft. The brief is locked in show.json.\n\nFADE OUT.\n",
+        show.name,
+        show.updated_at,
+        show.writer.brief.trim()
+    );
+    let path = dir.join("screenplay.fountain");
+    fs::write(&path, fountain)?;
+    show.writer.draft_path = Some(path.display().to_string());
+    show.rev += 1;
+    show.updated_at = now_rfc3339();
+    write_show(&dir, &show)?;
+    append_event(&dir, "writer.draft", &show)?;
+    Ok((dir, show))
 }
 
 fn write_show(dir: &Path, show: &Show) -> Result<(), ShowError> {

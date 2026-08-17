@@ -1,5 +1,5 @@
 use clap::{Parser, Subcommand};
-use lot_core::{create_show, open_show, Status};
+use lot_core::{create_show, draft_screenplay, open_show, set_brief, Status};
 use std::path::PathBuf;
 use std::process::ExitCode;
 
@@ -28,8 +28,24 @@ enum Cmd {
     },
     /// Open an existing show.lot and make it current.
     Open { path: PathBuf },
-    /// Native agent door (stdio MCP). Not wired yet — exits 2.
+    /// Writer: brief + outline stub (Grok draft not wired).
+    Writer {
+        #[command(subcommand)]
+        cmd: WriterCmd,
+    },
+    /// Native agent door (stdio MCP).
     Mcp,
+}
+
+#[derive(Subcommand)]
+enum WriterCmd {
+    /// Set the brief on the current show.
+    Brief {
+        #[arg(long)]
+        text: String,
+    },
+    /// Write screenplay.fountain outline stub from the brief.
+    Draft,
 }
 
 fn main() -> ExitCode {
@@ -75,6 +91,51 @@ fn main() -> ExitCode {
                 ExitCode::SUCCESS
             }
             Err(e) => fail(cli.json, &e.to_string()),
+        },
+        Cmd::Writer { cmd } => match cmd {
+            WriterCmd::Brief { text } => match set_brief(&text) {
+                Ok((dir, show)) => {
+                    if cli.json {
+                        println!(
+                            "{}",
+                            serde_json::json!({
+                                "ok": true,
+                                "show": dir.display().to_string(),
+                                "rev": show.rev,
+                                "brief": show.writer.brief,
+                            })
+                        );
+                    } else {
+                        println!("brief set ({})", dir.display());
+                    }
+                    ExitCode::SUCCESS
+                }
+                Err(e) => fail(cli.json, &e.to_string()),
+            },
+            WriterCmd::Draft => match draft_screenplay() {
+                Ok((dir, show)) => {
+                    if cli.json {
+                        println!(
+                            "{}",
+                            serde_json::json!({
+                                "ok": true,
+                                "show": dir.display().to_string(),
+                                "rev": show.rev,
+                                "draft": show.writer.draft_path,
+                            })
+                        );
+                    } else {
+                        println!(
+                            "draft {}",
+                            show.writer
+                                .draft_path
+                                .unwrap_or_else(|| dir.display().to_string())
+                        );
+                    }
+                    ExitCode::SUCCESS
+                }
+                Err(e) => fail(cli.json, &e.to_string()),
+            },
         },
         Cmd::Mcp => match lot_mcp::run_stdio() {
             Ok(()) => ExitCode::SUCCESS,
