@@ -221,4 +221,22 @@ mod tests {
         assert_eq!(redact_value(&json!("sk-live-xyz")), "[redacted]");
         assert_eq!(redact_value(&json!("wide tent")), "wide tent");
     }
+
+    #[test]
+    fn mutation_json_has_cli_envelope() {
+        let stamp = std::process::id();
+        let root = std::env::temp_dir().join(format!("lot-audit-envelope-{stamp}"));
+        let _ = fs::remove_dir_all(&root);
+        std::env::set_var("LOT_HOME", root.join("home"));
+        let (dir, show) = crate::create_show(&root.join("show"), Some("Envelope")).unwrap();
+        let v = mutation_json(&dir, &show, json!({ "brief": "neon" }));
+        assert_eq!(v["ok"], true);
+        assert_eq!(v["show"], dir.display().to_string());
+        assert_eq!(v["show_id"], show.id);
+        assert_eq!(v["rev"], show.rev);
+        assert!(v["event_id"].as_str().is_some());
+        assert_eq!(v["who"], "human");
+        assert_eq!(v["school"]["enabled"], false);
+        assert_eq!(v["brief"], "neon");
+    }
 }
