@@ -4,6 +4,8 @@ use serde_json::{json, Value};
 use std::cell::RefCell;
 use std::io::{self, BufRead, Write};
 use std::path::Path;
+use std::sync::mpsc;
+use std::thread;
 
 thread_local! {
     static PROGRESS_TOKEN: RefCell<Option<Value>> = const { RefCell::new(None) };
@@ -44,19 +46,41 @@ fn emit_progress(progress: f64, total: Option<f64>, message: &str) {
 
 const PROTOCOL: &str = "2024-11-05";
 
+/// True when the line was a cancel notification (do not dispatch as work).
+pub fn ingest_incoming(msg: &Value) -> bool {
+    if msg.get("method").and_then(|m| m.as_str()) == Some("notifications/cancelled") {
+        lot_core::from_notification(msg);
+        true
+    } else {
+        false
+    }
+}
+
 pub fn run_stdio() -> io::Result<()> {
-    let stdin = io::stdin();
-    let mut stdout = io::stdout();
-    for line in stdin.lock().lines() {
-        let line = line?;
-        let line = line.trim();
-        if line.is_empty() {
-            continue;
+    let (tx, rx) = mpsc::channel::<Value>();
+    thread::spawn(move || {
+        let stdin = io::stdin();
+        for line in stdin.lock().lines() {
+            let Ok(line) = line else {
+                break;
+            };
+            let line = line.trim();
+            if line.is_empty() {
+                continue;
+            }
+            let Ok(msg) = serde_json::from_str::<Value>(line) else {
+                continue;
+            };
+            if ingest_incoming(&msg) {
+                continue;
+            }
+            if tx.send(msg).is_err() {
+                break;
+            }
         }
-        let msg: Value = match serde_json::from_str(line) {
-            Ok(v) => v,
-            Err(_) => continue,
-        };
+    });
+    let mut stdout = io::stdout();
+    for msg in rx {
         if let Some(resp) = handle(&msg) {
             for note in drain_progress() {
                 writeln!(stdout, "{}", note)?;
@@ -81,10 +105,18 @@ pub fn handle(msg: &Value) -> Option<Value> {
             }),
         )),
         "notifications/initialized" => None,
-        "notifications/cancelled" => None,
+        "notifications/cancelled" => {
+            lot_core::from_notification(msg);
+            None
+        }
         "ping" => Some(ok(id, json!({}))),
         "tools/list" => Some(ok(id, json!({ "tools": tools() }))),
-        "tools/call" => Some(ok(id, call(msg.get("params")))),
+        "tools/call" => {
+            lot_core::begin_request(id.as_ref());
+            let result = call(msg.get("params"));
+            lot_core::end_request();
+            Some(ok(id, result))
+        }
         "resources/list" => Some(ok(id, resources_list())),
         "resources/read" => Some(ok(id, resources_read(msg.get("params")))),
         _ => {
@@ -1495,6 +1527,9 @@ fn err(id: Option<Value>, code: i64, message: &str) -> Value {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use std::sync::Mutex;
+
+    static ENV_LOCK: Mutex<()> = Mutex::new(());
 
     #[test]
     fn initialize() {
@@ -1576,12 +1611,17 @@ mod tests {
         let body: Value = serde_json::from_str(text).unwrap();
         assert_eq!(body["name"], "lot");
         assert_eq!(body["door"], "mcp");
+        assert!(body["dirty"].is_array(), "{body}");
+        assert!(body["missing"].is_array(), "{body}");
+        assert!(body["missing_media"].is_array(), "{body}");
     }
 
     #[test]
     fn notify_no_reply() {
+        lot_core::clear_cancel();
         assert!(handle(&json!({"jsonrpc":"2.0","method":"notifications/initialized"})).is_none());
         assert!(handle(&json!({"jsonrpc":"2.0","method":"notifications/cancelled"})).is_none());
+        lot_core::clear_cancel();
     }
 
     fn call_body(name: &str, args: Value) -> Value {
@@ -1626,6 +1666,7 @@ mod tests {
 
     #[test]
     fn mutating_tools_return_cli_envelope() {
+        let _g = ENV_LOCK.lock().unwrap_or_else(|e| e.into_inner());
         let root = std::env::temp_dir().join(format!(
             "lot-mcp-envelope-{}-{}",
             std::process::id(),
@@ -1713,6 +1754,7 @@ mod tests {
 
     #[test]
     fn mutating_tools_are_lean_unless_detail_full() {
+        let _g = ENV_LOCK.lock().unwrap_or_else(|e| e.into_inner());
         let root = std::env::temp_dir().join(format!(
             "lot-mcp-lean-{}-{}",
             std::process::id(),
@@ -1799,6 +1841,7 @@ mod tests {
 
     #[test]
     fn dailies_ingest_is_idempotent() {
+        let _g = ENV_LOCK.lock().unwrap_or_else(|e| e.into_inner());
         let root = std::env::temp_dir().join(format!(
             "lot-mcp-ingest-{}-{}",
             std::process::id(),
@@ -1863,6 +1906,7 @@ mod tests {
 
     #[test]
     fn stills_generate_emits_progress_for_token() {
+        let _g = ENV_LOCK.lock().unwrap_or_else(|e| e.into_inner());
         let root = std::env::temp_dir().join(format!(
             "lot-mcp-progress-{}-{}",
             std::process::id(),
@@ -1926,5 +1970,110 @@ mod tests {
         assert_eq!(notes[0]["method"], "notifications/progress");
         assert_eq!(notes[0]["params"]["progressToken"], "stills-1");
         assert!(notes[0]["params"]["progress"].as_f64().is_some());
+    }
+
+    #[test]
+    fn cancelled_stills_generate_is_error_no_png() {
+        let _g = ENV_LOCK.lock().unwrap_or_else(|e| e.into_inner());
+        let root = std::env::temp_dir().join(format!(
+            "lot-mcp-cancel-{}-{}",
+            std::process::id(),
+            std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .map(|d| d.as_nanos())
+                .unwrap_or(0)
+        ));
+        let _ = std::fs::remove_dir_all(&root);
+        std::fs::create_dir_all(&root).unwrap();
+        std::env::set_var("LOT_HOME", root.join("home"));
+        std::env::remove_var("LOT_SHOW");
+        lot_core::clear_caps();
+        lot_core::clear_agent();
+        lot_core::clear_cancel();
+
+        let show_dir = root.join("show");
+        call_body(
+            "lot_create",
+            json!({ "path": show_dir.display().to_string(), "name": "Cancel" }),
+        );
+        let script = root.join("script.txt");
+        std::fs::write(
+            &script,
+            "INT. TENT - NIGHT\n\nADA (quietly)\nDon't put it on.\n",
+        )
+        .unwrap();
+        call_body(
+            "lot_breakdown_import",
+            json!({
+                "path": show_dir.display().to_string(),
+                "file": script.display().to_string()
+            }),
+        );
+        call_body(
+            "lot_slate_set",
+            json!({
+                "path": show_dir.display().to_string(),
+                "shot": "01",
+                "prompt": "wide tent, neon rain"
+            }),
+        );
+        lot_core::request_cancel(None);
+        let raw = handle(&json!({
+            "jsonrpc":"2.0","id":12,"method":"tools/call",
+            "params":{
+                "name":"lot_stills_generate",
+                "arguments":{
+                    "path": show_dir.display().to_string(),
+                    "shot":"01",
+                    "backend":"grok"
+                }
+            }
+        }))
+        .unwrap();
+        assert_eq!(raw["result"]["isError"], true, "{raw}");
+        let text = raw["result"]["content"][0]["text"].as_str().unwrap();
+        assert!(
+            text.starts_with(lot_core::CANCELLED_MSG),
+            "expected cancelled, got {text}"
+        );
+        let stills = show_dir.join("stills");
+        let pngs = if stills.is_dir() {
+            std::fs::read_dir(&stills)
+                .unwrap()
+                .filter_map(|e| e.ok())
+                .filter(|e| e.path().is_file())
+                .count()
+        } else {
+            0
+        };
+        assert_eq!(pngs, 0, "cancelled stills must not write an image");
+        lot_core::clear_cancel();
+    }
+
+    #[test]
+    fn ingest_incoming_cancels_matching_request() {
+        let _g = ENV_LOCK.lock().unwrap_or_else(|e| e.into_inner());
+        lot_core::clear_cancel();
+        lot_core::begin_request(Some(&json!(12)));
+        assert!(ingest_incoming(&json!({
+            "jsonrpc": "2.0",
+            "method": "notifications/cancelled",
+            "params": { "requestId": 12 }
+        })));
+        assert!(lot_core::is_cancelled());
+        lot_core::clear_cancel();
+        lot_core::begin_request(Some(&json!(12)));
+        assert!(ingest_incoming(&json!({
+            "jsonrpc": "2.0",
+            "method": "notifications/cancelled",
+            "params": { "requestId": 99 }
+        })));
+        assert!(!lot_core::is_cancelled());
+        assert!(!ingest_incoming(&json!({
+            "jsonrpc": "2.0",
+            "method": "tools/call",
+            "id": 1
+        })));
+        lot_core::clear_cancel();
     }
 }

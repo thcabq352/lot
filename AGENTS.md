@@ -115,7 +115,7 @@ lot log --n 50 --json
 lot log --export --json
 ```
 
-Every write records `id`, `at`, `kind`, `who`, `rev`, `show_id`. `who` is `--agent` / `LOT_AGENT` or `human`. `lot status --json` includes `last_event`. Mutating `--json` includes `show_id`, `event_id`, `who`, `school`. `--export` writes `audit/export.jsonl` with tokens redacted (`[redacted]`). Needs `export` cap.
+Every write records `id`, `at`, `kind`, `who`, `rev`, `show_id`. `who` is `--agent` / `LOT_AGENT` or `human`. `lot status --json` includes `last_event`, `dirty` (sections with work), `missing` (current-phase handoff blockers), and `missing_media` (referenced paths that are not files). Mutating `--json` includes `show_id`, `event_id`, `who`, `school`. `--export` writes `audit/export.jsonl` with tokens redacted (`[redacted]`). Needs `export` cap.
 
 ## Handoff
 
@@ -156,7 +156,7 @@ lot stills describe --shot 01 --json                   # Grok vision or Ollama V
 lot board export --json
 ```
 
-`--backend` is required: `grok` or `comfy`. No silent swap. No fake PNG. Prompt from slate or `--prompt`. Unset `LOT_COMFY_WORKFLOW` uses `crates/lot-core/packs/comfy-flux-still.json`. `off` disables the pack. Every generate records provenance: backend, model, seed, prompt hash, duration, VRAM cap (`LOT_VRAM_CAP` or Comfy `vram_total`). Describe looks at the still, a plate frame, or `--file`. No vision → `no vision —` and **no** invented look.
+`--backend` is required: `grok` or `comfy`. No silent swap. No fake PNG. Prompt from slate or `--prompt`. Unset `LOT_COMFY_WORKFLOW` uses `crates/lot-core/packs/comfy-flux-still.json`. `off` disables the pack. Every generate records provenance: backend, model, seed, prompt hash, duration, VRAM cap (`LOT_VRAM_CAP` or Comfy `vram_total`). Describe looks at the still, a plate frame, or `--file`. No vision → `no vision —` and **no** invented look. MCP `notifications/cancelled` stops stills generate, finish, and draft (`cancelled —`; no fake PNG / fountain / finish file).
 
 ## Slate (canon + per-target compile)
 

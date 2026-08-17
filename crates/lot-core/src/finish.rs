@@ -7,13 +7,15 @@ use serde_json::json;
 use std::fs;
 use std::path::{Path, PathBuf};
 use std::process::Command;
-use std::time::Instant;
+use std::thread;
+use std::time::{Duration, Instant};
 
 pub fn finish_pickup(
     file: Option<&Path>,
     upscale: bool,
     fps: Option<&str>,
 ) -> Result<(PathBuf, Show, PathBuf), ShowError> {
+    crate::cancel::check()?;
     if !upscale && fps.map(str::trim).filter(|s| !s.is_empty()).is_none() {
         return Err(ShowError::Msg(
             "finish needs --upscale and/or --fps (optional end of pipeline)".into(),
@@ -57,11 +59,11 @@ pub fn finish_pickup(
             .map(|s| s.trim().to_string())
             .filter(|s| !s.is_empty())
         {
-            let status = Command::new(&cmd)
-                .arg(&src)
-                .arg(&dest)
-                .status()
-                .map_err(|e| ShowError::Msg(format!("no finish — upscale engine: {e}")))?;
+            let status = run_cancellable(
+                Command::new(&cmd).arg(&src).arg(&dest),
+                &dest,
+                "no finish — upscale engine",
+            )?;
             if !status.success()
                 || !dest.is_file()
                 || dest.metadata().map(|m| m.len()).unwrap_or(0) == 0
@@ -74,7 +76,16 @@ pub fn finish_pickup(
             if let Some(ref rate) = fps {
                 fps_pass(&dest, rate)?;
             }
-            return record(dir, &mut show, dest, upscale, fps.as_deref(), "lot_upscale_cmd", &cmd, started);
+            return record(
+                dir,
+                &mut show,
+                dest,
+                upscale,
+                fps.as_deref(),
+                "lot_upscale_cmd",
+                &cmd,
+                started,
+            );
         }
     }
 
@@ -91,15 +102,17 @@ pub fn finish_pickup(
     if let Some(ref rate) = fps {
         vf.push(format!("fps={rate}"));
     }
-    let status = Command::new("ffmpeg")
-        .args(["-y", "-i"])
-        .arg(&src)
-        .arg("-vf")
-        .arg(vf.join(","))
-        .arg("-an")
-        .arg(&dest)
-        .status()
-        .map_err(|e| ShowError::Msg(format!("no finish — ffmpeg: {e}")))?;
+    let status = run_cancellable(
+        Command::new("ffmpeg")
+            .args(["-y", "-i"])
+            .arg(&src)
+            .arg("-vf")
+            .arg(vf.join(","))
+            .arg("-an")
+            .arg(&dest),
+        &dest,
+        "no finish — ffmpeg",
+    )?;
     if !status.success() || !dest.is_file() || dest.metadata().map(|m| m.len()).unwrap_or(0) == 0 {
         let _ = fs::remove_file(&dest);
         return Err(ShowError::Msg(
@@ -118,6 +131,32 @@ pub fn finish_pickup(
     )
 }
 
+fn run_cancellable(
+    cmd: &mut Command,
+    dest: &Path,
+    ctx: &str,
+) -> Result<std::process::ExitStatus, ShowError> {
+    crate::cancel::check()?;
+    let mut child = cmd
+        .spawn()
+        .map_err(|e| ShowError::Msg(format!("{ctx}: {e}")))?;
+    loop {
+        match child.try_wait() {
+            Ok(Some(st)) => return Ok(st),
+            Ok(None) => {
+                if crate::cancel::is_cancelled() {
+                    let _ = child.kill();
+                    let _ = child.wait();
+                    let _ = fs::remove_file(dest);
+                    return Err(crate::cancel::cancelled_err());
+                }
+                thread::sleep(Duration::from_millis(50));
+            }
+            Err(e) => return Err(ShowError::Msg(format!("{ctx}: {e}"))),
+        }
+    }
+}
+
 fn fps_pass(file: &Path, rate: &str) -> Result<(), ShowError> {
     if !crate::doctor::bin_on_path("ffmpeg") {
         return Err(ShowError::Msg(
@@ -125,13 +164,15 @@ fn fps_pass(file: &Path, rate: &str) -> Result<(), ShowError> {
         ));
     }
     let tmp = file.with_extension("fps-tmp.mp4");
-    let status = Command::new("ffmpeg")
-        .args(["-y", "-i"])
-        .arg(file)
-        .args(["-vf", &format!("fps={rate}"), "-an"])
-        .arg(&tmp)
-        .status()
-        .map_err(|e| ShowError::Msg(format!("no finish — fps: {e}")))?;
+    let status = run_cancellable(
+        Command::new("ffmpeg")
+            .args(["-y", "-i"])
+            .arg(file)
+            .args(["-vf", &format!("fps={rate}"), "-an"])
+            .arg(&tmp),
+        &tmp,
+        "no finish — fps",
+    )?;
     if !status.success() || !tmp.is_file() {
         let _ = fs::remove_file(&tmp);
         return Err(ShowError::Msg(

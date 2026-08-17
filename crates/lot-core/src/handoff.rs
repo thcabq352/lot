@@ -9,8 +9,17 @@ use serde_json::json;
 use std::path::{Path, PathBuf};
 
 pub const PHASES: &[&str] = &[
-    "writer", "breakdown", "wall", "picture", "stage", "motion", "board", "slate", "dailies",
-    "stems", "cut",
+    "writer",
+    "breakdown",
+    "wall",
+    "picture",
+    "stage",
+    "motion",
+    "board",
+    "slate",
+    "dailies",
+    "stems",
+    "cut",
 ];
 
 #[derive(Debug, Clone, Serialize)]
@@ -100,6 +109,118 @@ fn next_phase(phase: &str) -> Option<String> {
     PHASES.get(i + 1).map(|s| (*s).to_string())
 }
 
+/// Current-phase blockers. Same strings as `lot handoff` dry-run.
+pub fn phase_missing(dir: &Path, show: &Show) -> Vec<String> {
+    missing_for(&normalize_phase(&show.phase), dir, show)
+}
+
+/// Sections that already have work on disk or in `show.json`.
+pub fn dirty_sections(dir: &Path, show: &Show) -> Vec<String> {
+    PHASES
+        .iter()
+        .filter(|p| section_touched(p, dir, show))
+        .map(|s| (*s).to_string())
+        .collect()
+}
+
+fn section_touched(phase: &str, dir: &Path, show: &Show) -> bool {
+    match phase {
+        "writer" => {
+            !show.writer.brief.trim().is_empty()
+                || has_draft(dir, show)
+                || !show.writer.cast.is_empty()
+                || show.writer.locked
+        }
+        "breakdown" => !show.scenes.is_empty() || !show.shots.is_empty(),
+        "wall" => !show.wall.is_empty(),
+        "picture" => show.shots.iter().any(|s| s.locked),
+        "stage" => {
+            show.shots.iter().any(|s| {
+                !s.stage_marks.is_empty()
+                    || !s.size.is_empty()
+                    || !s.angle.is_empty()
+                    || !s.lens.is_empty()
+                    || !s.move_kind.is_empty()
+            }) || dir.join("stage").join("block.json").is_file()
+        }
+        "motion" => {
+            show.shots.iter().any(|s| {
+                s.plate_path.is_some() || !s.motion_move.is_empty() || !s.motion_notes.is_empty()
+            }) || dir.join("motion").join("previs.json").is_file()
+        }
+        "board" => {
+            show.shots.iter().any(|s| s.still_path.is_some())
+                || dir.join("board").join("board.json").is_file()
+        }
+        "slate" => show.shots.iter().any(|s| !s.prompt.trim().is_empty()),
+        "dailies" => !show.takes.is_empty(),
+        "stems" => {
+            let s = &show.stems;
+            !s.soundtrack_brief.trim().is_empty()
+                || s.soundtrack_cue.is_some()
+                || s.soundtrack_path.is_some()
+                || !s.vo_text.trim().is_empty()
+                || s.vo_path.is_some()
+        }
+        "cut" => show.finish.path.is_some() || dir.join("export.fcpxml").is_file(),
+        _ => false,
+    }
+}
+
+/// Referenced media that is not a file. Does not invent a still or take.
+pub fn missing_media(dir: &Path, show: &Show) -> Vec<crate::MediaGap> {
+    let mut out = Vec::new();
+    if let Some(p) = &show.writer.draft_path {
+        push_gap(&mut out, "draft", p, None, None);
+    }
+    for shot in &show.shots {
+        if let Some(p) = &shot.still_path {
+            push_gap(&mut out, "still", p, Some(&shot.num), Some(&shot.id));
+        }
+        if let Some(p) = &shot.plate_path {
+            push_gap(&mut out, "plate", p, Some(&shot.num), Some(&shot.id));
+        }
+    }
+    for take in &show.takes {
+        push_gap(&mut out, "take", &take.path, None, Some(&take.id));
+    }
+    if let Some(p) = &show.stems.soundtrack_path {
+        push_gap(&mut out, "soundtrack", p, None, None);
+    }
+    if let Some(p) = &show.stems.vo_path {
+        push_gap(&mut out, "vo", p, None, None);
+    }
+    if let Some(p) = &show.finish.path {
+        push_gap(&mut out, "finish", p, None, None);
+    }
+    for item in &show.media {
+        if out.iter().any(|g| g.path == item.path) {
+            continue;
+        }
+        push_gap(&mut out, &item.kind, &item.path, None, None);
+    }
+    let _ = dir;
+    out
+}
+
+fn push_gap(
+    out: &mut Vec<crate::MediaGap>,
+    kind: &str,
+    path: &str,
+    shot: Option<&str>,
+    id: Option<&str>,
+) {
+    if path.trim().is_empty() || Path::new(path).is_file() {
+        return;
+    }
+    out.push(crate::MediaGap {
+        kind: kind.into(),
+        path: path.to_string(),
+        shot: shot.filter(|s| !s.is_empty()).map(|s| s.to_string()),
+        id: id.filter(|s| !s.is_empty()).map(|s| s.to_string()),
+    });
+}
+
 fn missing_for(phase: &str, dir: &Path, show: &Show) -> Vec<String> {
     match phase {
         "writer" => writer_missing(dir, show),
@@ -180,9 +301,10 @@ fn stage_missing(dir: &Path, show: &Show) -> Vec<String> {
 }
 
 fn motion_missing(dir: &Path, show: &Show) -> Vec<String> {
-    let marked = show.shots.iter().any(|s| {
-        s.plate_path.is_some() || !s.motion_move.is_empty() || !s.motion_notes.is_empty()
-    });
+    let marked = show
+        .shots
+        .iter()
+        .any(|s| s.plate_path.is_some() || !s.motion_move.is_empty() || !s.motion_notes.is_empty());
     if marked || dir.join("motion").join("previs.json").is_file() {
         Vec::new()
     } else {
@@ -191,7 +313,8 @@ fn motion_missing(dir: &Path, show: &Show) -> Vec<String> {
 }
 
 fn board_missing(dir: &Path, show: &Show) -> Vec<String> {
-    if show.shots.iter().any(|s| s.still_path.is_some()) || dir.join("board").join("board.json").is_file()
+    if show.shots.iter().any(|s| s.still_path.is_some())
+        || dir.join("board").join("board.json").is_file()
     {
         Vec::new()
     } else {

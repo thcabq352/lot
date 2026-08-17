@@ -10,6 +10,7 @@ mod audit;
 mod brain;
 mod breakdown;
 mod budget;
+mod cancel;
 mod caps;
 mod dailies;
 mod detail;
@@ -40,6 +41,10 @@ pub use brain::{
 };
 pub use breakdown::{breakdown_parse, breakdown_summary, picture_lock, wall_add};
 pub use budget::{set_budget, Budget};
+pub use cancel::{
+    begin_request, check as check_cancel, clear as clear_cancel, end_request, from_notification,
+    is_cancelled, request_cancel, run_interruptible, CANCELLED_MSG,
+};
 pub use caps::{active as active_caps, clear_caps, parse_caps, set_caps, with_caps, Cap, Caps};
 pub use dailies::{dailies_circle, dailies_export, dailies_ingest, IngestReport};
 pub use detail::{
@@ -48,7 +53,10 @@ pub use detail::{
 };
 pub use doctor::Doctor;
 pub use finish::finish_pickup;
-pub use handoff::{handoff, inspect as inspect_handoff, Handoff, PHASES as HANDOFF_PHASES};
+pub use handoff::{
+    dirty_sections, handoff, inspect as inspect_handoff, missing_media, phase_missing, Handoff,
+    PHASES as HANDOFF_PHASES,
+};
 pub use help::{help_plain, help_spec};
 pub use import::{import_file, ImportReport};
 pub use lock::{lock_show, unlock_show};
@@ -96,8 +104,25 @@ pub struct Status {
     pub budget: Option<Budget>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub last_event: Option<EventMeta>,
+    /// Sections that already have work (so the first call does not need `lot handoff`).
+    pub dirty: Vec<String>,
+    /// Current-phase handoff blockers (same strings as `lot handoff`).
+    pub missing: Vec<String>,
+    /// Referenced stills / plates / takes / stems / finish that are not on disk.
+    pub missing_media: Vec<MediaGap>,
     pub doctor: Doctor,
     pub error: Option<String>,
+}
+
+/// A show path that `show.json` names but the file is gone.
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+pub struct MediaGap {
+    pub kind: String,
+    pub path: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub shot: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub id: Option<String>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -118,28 +143,36 @@ impl Status {
         let cap = crate::caps::active().names();
         match current_show_path() {
             Ok(Some(p)) => match read_show(&p) {
-                Ok(show) => Self {
-                    ok: true,
-                    name: NAME,
-                    version: VERSION,
-                    door: "cli",
-                    school: show.school.clone(),
-                    renderer,
-                    show: Some(p.display().to_string()),
-                    show_name: Some(show.name),
-                    rev: Some(show.rev),
-                    phase: Some(show.phase.clone()),
-                    scenes: Some(show.scenes.len()),
-                    shots: Some(show.shots.len()),
-                    takes: Some(show.takes.len()),
-                    cap: cap.clone(),
-                    locked_by: show.locked_by.clone(),
-                    agent: crate::agent::current(),
-                    budget: Some(show.budget.clone()),
-                    last_event: crate::audit::last_event(&p),
-                    doctor,
-                    error: None,
-                },
+                Ok(show) => {
+                    let dirty = crate::handoff::dirty_sections(&p, &show);
+                    let missing = crate::handoff::phase_missing(&p, &show);
+                    let missing_media = crate::handoff::missing_media(&p, &show);
+                    Self {
+                        ok: true,
+                        name: NAME,
+                        version: VERSION,
+                        door: "cli",
+                        school: show.school.clone(),
+                        renderer,
+                        show: Some(p.display().to_string()),
+                        show_name: Some(show.name),
+                        rev: Some(show.rev),
+                        phase: Some(show.phase.clone()),
+                        scenes: Some(show.scenes.len()),
+                        shots: Some(show.shots.len()),
+                        takes: Some(show.takes.len()),
+                        cap: cap.clone(),
+                        locked_by: show.locked_by.clone(),
+                        agent: crate::agent::current(),
+                        budget: Some(show.budget.clone()),
+                        last_event: crate::audit::last_event(&p),
+                        dirty,
+                        missing,
+                        missing_media,
+                        doctor,
+                        error: None,
+                    }
+                }
                 Err(e) => Self {
                     ok: false,
                     name: NAME,
@@ -159,6 +192,9 @@ impl Status {
                     agent: crate::agent::current(),
                     budget: None,
                     last_event: None,
+                    dirty: Vec::new(),
+                    missing: Vec::new(),
+                    missing_media: Vec::new(),
                     doctor,
                     error: Some(e.to_string()),
                 },
@@ -182,6 +218,9 @@ impl Status {
                 agent: crate::agent::current(),
                 budget: None,
                 last_event: None,
+                dirty: Vec::new(),
+                missing: Vec::new(),
+                missing_media: Vec::new(),
                 doctor,
                 error: None,
             },
@@ -204,6 +243,9 @@ impl Status {
                 agent: crate::agent::current(),
                 budget: None,
                 last_event: None,
+                dirty: Vec::new(),
+                missing: Vec::new(),
+                missing_media: Vec::new(),
                 doctor,
                 error: Some(e.to_string()),
             },

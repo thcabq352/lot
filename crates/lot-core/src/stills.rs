@@ -98,6 +98,7 @@ pub fn stills_generate(
     backend: &str,
     prompt: Option<&str>,
 ) -> Result<(PathBuf, Show), ShowError> {
+    crate::cancel::check()?;
     let backend = resolve_stills_backend(backend)?;
     match backend {
         "grok" => crate::caps::require(crate::caps::Cap::Spend)?,
@@ -130,12 +131,14 @@ pub fn stills_generate(
     }
     let num = show.shots[shot_i].num.clone();
     fs::create_dir_all(dir.join("stills"))?;
+    crate::cancel::check()?;
 
     let (bytes, prov) = match backend {
         "grok" => generate_grok(&text)?,
         "comfy" => generate_comfy(&text)?,
         _ => unreachable!(),
     };
+    crate::cancel::check()?;
     match backend {
         "grok" => crate::budget::record_spend(&mut show),
         "comfy" => crate::budget::record_render(&mut show),
@@ -298,6 +301,12 @@ pub fn board_export() -> Result<(PathBuf, Show, PathBuf), ShowError> {
 }
 
 fn generate_grok(prompt: &str) -> Result<(Vec<u8>, Provenance), ShowError> {
+    crate::cancel::check()?;
+    let prompt = prompt.to_string();
+    crate::cancel::run_interruptible(move || generate_grok_blocking(&prompt))
+}
+
+fn generate_grok_blocking(prompt: &str) -> Result<(Vec<u8>, Provenance), ShowError> {
     let started = Instant::now();
     let (token, base, auth) = grok_auth().ok_or_else(|| {
         ShowError::Msg(
@@ -452,6 +461,7 @@ fn generate_comfy(prompt: &str) -> Result<(Vec<u8>, Provenance), ShowError> {
                 .unwrap_or(300),
         );
     let image_meta = loop {
+        crate::cancel::check()?;
         if Instant::now() > deadline {
             return Err(ShowError::Msg(
                 "no comfy stills — timed out. Did not call Grok.".into(),

@@ -50,7 +50,7 @@ A show is a directory with `show.json` + `events.jsonl` + `media/`.
 1. `lot_status` (or `lot status --json`)
 2. `lot_doctor` (or `lot doctor --json`)
 
-Read `school`, `renderer`, `phase`, `cap`, `locked_by`, `agent`, `budget`, `last_event`, `doctor`. If `school.enabled` is false, skip all pedagogy. If `locked_by` is someone else, stop — do not clobber.
+Read `school`, `renderer`, `phase`, `dirty`, `missing`, `missing_media`, `cap`, `locked_by`, `agent`, `budget`, `last_event`, `doctor`. `missing` is the current-phase handoff gate. `dirty` is sections that already have work. `missing_media` is referenced paths that are not files. If `school.enabled` is false, skip all pedagogy. If `locked_by` is someone else, stop — do not clobber.
 
 If `doctor.stills_comfy_workflow` is false, Comfy stills will fail honestly — do not invent a PNG.
 
@@ -60,7 +60,7 @@ If `doctor.stills_comfy_workflow` is false, Comfy stills will fail honestly — 
 2. **Breakdown** — import/parse (ScriptBreak-equivalent, including `NAME (quietly)` → character). Import does not delete the source.
 3. **Wall / Picture** — beats, lock shot cards. Does not rename the shot.
 4. **Stage** — 2D floor marks + camera card. `stage export` → `stage/block.json`. 3D stays in Blockout. Never invent glTF.
-5. **Stills / Board** — `stills generate --backend grok|comfy` (no silent swap), `stills describe` (Grok vision or Ollama VL; no invented look), then `board export`. Generates record seed, prompt hash, duration, VRAM cap so a take can be reshot.
+5. **Stills / Board** — `stills generate --backend grok|comfy` (no silent swap), `stills describe` (Grok vision or Ollama VL; no invented look), then `board export`. Generates record seed, prompt hash, duration, VRAM cap so a take can be reshot. MCP `notifications/cancelled` stops stills generate / finish / draft (`cancelled —`; no fake PNG, wav, or fountain).
 6. **Motion** — plate + marks (`camera_only` | `actor_motion` | `object_motion` | `full_scene`). Export `motion/previs.json`. Pose/depth stay in Motion Previs Studio. Never invent OpenPose.
 7. **Slate** — canon on the shot; `slate compile --target` for LTX, API providers, or `LOT_PROMPT_SERVER`. LoRAs are metadata. No invented rewrite if the brain/server is down.
 8. **Dailies** — ingest `01-foo.mp4` → shot 01 (do not rename the shot), circle, FCPXML. Circle without `--take` fails (no GUI).
