@@ -9,3 +9,5 @@ description = "Lot kernel: status, schema, no GUI."
 serde = { workspace = true }
 serde_json = { workspace = true }
 ureq = { version = "2", features = ["json"] }
+regex = "1"
+sha2 = "0.10"

@@ -12,17 +12,19 @@ You are an agent in the shop. Humans confirm. You do not click folder dialogs.
 lot status --json
 lot create <dir> --name "Title" --json
 lot open <dir> --json
+lot doctor --json
 lot mcp
 ```
 
 Optional `--show <path>` (CLI global) or MCP `path` opens that show, then runs. Omit to keep the current pointer.
 
-`lot mcp` is NDJSON JSON-RPC 2.0 on stdin/stdout (same as the suite). Tools:
+`lot mcp` is NDJSON JSON-RPC 2.0 on stdin/stdout. Tools:
 
-- `lot_status`, `lot_create`, `lot_open`
-- `lot_writer_brief`, `lot_writer_style`, `lot_writer_cast`
-- `lot_writer_draft`, `lot_writer_revise`
-- `lot_writer_lock`, `lot_writer_unlock`
+- `lot_status`, `lot_create`, `lot_open`, `lot_doctor`
+- `lot_writer_brief`, `lot_writer_style`, `lot_writer_cast`, `lot_writer_draft`, `lot_writer_revise`, `lot_writer_lock`, `lot_writer_unlock`
+- `lot_breakdown_import`, `lot_breakdown_parse`
+- `lot_wall_add`, `lot_picture_lock`, `lot_slate_set`
+- `lot_dailies_ingest`, `lot_dailies_circle`, `lot_dailies_export`, `lot_cut_export`
 
 Hermes:
 
@@ -30,30 +32,46 @@ Hermes:
 { "command": "C:/Users/thcab/lot/target/debug/lot.exe", "args": ["mcp"] }
 ```
 
+Skill: `skills/film-lot/SKILL.md`.
+
 No TTY prompts. Flags only. Exit 0 = ok. A show is a directory with `show.json` + `events.jsonl` + `media/`.
 
 ## Writer
 
-Same verbs on CLI and MCP.
-
 ```
 lot writer brief --text "…"
 lot writer style --genre drama --living greta-gerwig --canon akira-kurosawa --format 30min
-lot writer cast --name Ada --function lead --look "…" --must-not "…"
-lot writer cast --from-json "[{…}]"
+lot writer cast --name Ada --function lead
 lot writer draft --json
 lot writer revise --notes "…"
 lot writer lock
-lot writer unlock
 ```
 
-Style IDs come from dated JSON packs in `crates/lot-core/packs/` (influence / coverage style — not endorsement). Unknown ID errors contain `unknown genre` / `unknown living` / `unknown canon`. Formats: `feature | 30min | 15s | episodic`.
+Empty brief → `no brief`. No brain → `no brain —` and never a fake fountain.
 
-Lock blocks brief, style, cast, draft, revise (error contains `locked`). Empty brief → `no brief`. No draft → revise errors with `no draft`. No brain → `no brain —` and never a fake fountain.
+## Breakdown (ScriptBreak logic)
+
+```
+lot breakdown import --file script.txt --json
+lot breakdown parse --json
+lot breakdown status --json
+```
+
+Parser is ScriptBreak-equivalent (sluglines, `NAME (quietly)` → character ADA). Import does not delete the source `.txt` / `.scriptbreak`.
+
+## Dailies (Circle Take)
+
+```
+lot dailies ingest --file 01-foo.mp4 --json
+lot dailies circle --take tk-1 --json
+lot dailies export --json
+```
+
+`01-foo.mp4` binds to shot `01` and **does not** rename the shot to `"01"`. Circle without `--take` exits non-zero (no GUI).
 
 ## Stack
 
-- `crates/lot-core` — status, show schema, Writer, brains
+- `crates/lot-core` — schema, Writer, Breakdown, Dailies, doctor
 - `crates/lot-cli` — binary `lot`
 - `crates/lot-mcp` — stdio MCP (`lot mcp`)
 
@@ -73,3 +91,4 @@ Lock blocks brief, style, cast, draft, revise (error contains `locked`). Empty b
 - Commit a real show
 - Put API keys in chat or files
 - Require Comfy/Resolve/GPU for `lot status`
+- Start Phase 4 Tauri or Phase 6 installers in the same sprint as kernel work

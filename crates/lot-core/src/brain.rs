@@ -553,9 +553,12 @@ mod tests {
             updated_at: "0".into(),
             rev: 1,
             school: SchoolStatus::default(),
+            phase: "writer".into(),
             scenes: vec![],
             shots: vec![],
             takes: vec![],
+            media: vec![],
+            wall: vec![],
             writer: Writer {
                 brief: "A clown loses the mask.".into(),
                 genres: vec!["drama".into()],

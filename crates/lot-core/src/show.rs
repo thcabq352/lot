@@ -1,3 +1,4 @@
+use crate::model::{Beat, MediaItem, Scene, Shot, Take};
 use crate::packs::{self, IdKind};
 use crate::{SchoolStatus, SHOW_FILE, SHOW_SCHEMA};
 use serde::{Deserialize, Serialize};
@@ -57,12 +58,18 @@ pub struct Show {
     pub updated_at: String,
     pub rev: u64,
     pub school: SchoolStatus,
+    #[serde(default = "crate::model::default_phase_value")]
+    pub phase: String,
     #[serde(default)]
-    pub scenes: Vec<serde_json::Value>,
+    pub scenes: Vec<Scene>,
     #[serde(default)]
-    pub shots: Vec<serde_json::Value>,
+    pub shots: Vec<Shot>,
     #[serde(default)]
-    pub takes: Vec<serde_json::Value>,
+    pub takes: Vec<Take>,
+    #[serde(default)]
+    pub media: Vec<MediaItem>,
+    #[serde(default)]
+    pub wall: Vec<Beat>,
     #[serde(default)]
     pub writer: Writer,
 }
@@ -112,9 +119,12 @@ impl Show {
             updated_at: now,
             rev: 1,
             school: SchoolStatus::default(),
+            phase: "writer".into(),
             scenes: Vec::new(),
             shots: Vec::new(),
             takes: Vec::new(),
+            media: Vec::new(),
+            wall: Vec::new(),
             writer: Writer::default(),
         }
     }
@@ -188,7 +198,7 @@ fn require_unlocked() -> Result<(PathBuf, Show), ShowError> {
     Ok((dir, show))
 }
 
-fn bump(show: &mut Show) {
+pub(crate) fn bump(show: &mut Show) {
     show.rev += 1;
     show.updated_at = now_rfc3339();
 }
@@ -391,7 +401,7 @@ fn write_fountain(
     Ok(())
 }
 
-fn write_show(dir: &Path, show: &Show) -> Result<(), ShowError> {
+pub(crate) fn write_show(dir: &Path, show: &Show) -> Result<(), ShowError> {
     let path = dir.join(SHOW_FILE);
     let tmp = dir.join(".show.json.tmp");
     let body = serde_json::to_string_pretty(show)?;
@@ -400,11 +410,11 @@ fn write_show(dir: &Path, show: &Show) -> Result<(), ShowError> {
     Ok(())
 }
 
-fn append_event(dir: &Path, kind: &str, show: &Show) -> Result<(), ShowError> {
+pub(crate) fn append_event(dir: &Path, kind: &str, show: &Show) -> Result<(), ShowError> {
     append_event_with(dir, kind, show, None)
 }
 
-fn append_event_with(
+pub(crate) fn append_event_with(
     dir: &Path,
     kind: &str,
     show: &Show,
@@ -525,7 +535,7 @@ mod tests {
 
     #[test]
     fn create_then_read() {
-        let _g = ENV.lock().unwrap();
+        let _g = ENV.lock().unwrap_or_else(|e| e.into_inner());
         isolate_home();
         let dir = tmp();
         let (path, show) = create_show(&dir, Some("Demo")).unwrap();
@@ -541,7 +551,7 @@ mod tests {
 
     #[test]
     fn refuse_second_create() {
-        let _g = ENV.lock().unwrap();
+        let _g = ENV.lock().unwrap_or_else(|e| e.into_inner());
         isolate_home();
         let dir = tmp();
         create_show(&dir, Some("A")).unwrap();
@@ -553,7 +563,7 @@ mod tests {
 
     #[test]
     fn unknown_genre_errors() {
-        let _g = ENV.lock().unwrap();
+        let _g = ENV.lock().unwrap_or_else(|e| e.into_inner());
         setup_show("G");
         let err = set_style(Some(&["not-a-genre".into()]), None, None, None)
             .unwrap_err()
@@ -563,7 +573,7 @@ mod tests {
 
     #[test]
     fn style_and_cast_persist() {
-        let _g = ENV.lock().unwrap();
+        let _g = ENV.lock().unwrap_or_else(|e| e.into_inner());
         let (dir, _) = setup_show("Style");
         set_style(
             Some(&["drama".into(), "thriller".into()]),
@@ -593,7 +603,7 @@ mod tests {
 
     #[test]
     fn lock_blocks_then_unlock_restores() {
-        let _g = ENV.lock().unwrap();
+        let _g = ENV.lock().unwrap_or_else(|e| e.into_inner());
         setup_show("Lock");
         set_brief("a clown at the gate").unwrap();
         lock_writer().unwrap();
@@ -620,7 +630,7 @@ mod tests {
 
     #[test]
     fn revise_without_draft_errors() {
-        let _g = ENV.lock().unwrap();
+        let _g = ENV.lock().unwrap_or_else(|e| e.into_inner());
         setup_show("Revise");
         set_brief("something happens").unwrap();
         let err = revise_screenplay("make it shorter")
@@ -631,7 +641,7 @@ mod tests {
 
     #[test]
     fn empty_brief_refuses_draft() {
-        let _g = ENV.lock().unwrap();
+        let _g = ENV.lock().unwrap_or_else(|e| e.into_inner());
         setup_show("Empty");
         let err = draft_screenplay().unwrap_err().to_string();
         assert!(err.contains("no brief"), "{err}");
@@ -639,7 +649,7 @@ mod tests {
 
     #[test]
     fn no_brain_does_not_write_stub() {
-        let _g = ENV.lock().unwrap();
+        let _g = ENV.lock().unwrap_or_else(|e| e.into_inner());
         let (dir, _) = setup_show("Brain");
         isolate_brain();
         set_brief("a carnival drama").unwrap();
@@ -654,7 +664,7 @@ mod tests {
 
     #[test]
     fn replace_cast_json_all() {
-        let _g = ENV.lock().unwrap();
+        let _g = ENV.lock().unwrap_or_else(|e| e.into_inner());
         let (dir, _) = setup_show("JsonCast");
         upsert_cast("Temp", None, None, None).unwrap();
         replace_cast_json(
@@ -665,5 +675,50 @@ mod tests {
         assert_eq!(show.writer.cast.len(), 2);
         assert_eq!(show.writer.cast[0].name, "Ada");
         assert_eq!(show.writer.cast[1].must_not, "gun");
+    }
+
+    #[test]
+    fn breakdown_import_matches_golden_fixture() {
+        let _g = ENV.lock().unwrap_or_else(|e| e.into_inner());
+        let (dir, _) = setup_show("Carnival");
+        let fixture = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("fixtures/carnival.txt");
+        crate::breakdown_parse(Some(&fixture)).unwrap();
+        let show = read_show(&dir).unwrap();
+        assert_eq!(show.scenes.len(), 3, "AC-002 scene count");
+        assert_eq!(show.shots.len(), 3);
+        assert_eq!(show.shots[0].num, "01");
+        assert_eq!(show.shots[0].name, show.scenes[0].slug);
+        assert!(show.scenes[0].characters.iter().any(|c| c == "ADA"));
+        assert_eq!(show.phase, "breakdown");
+    }
+
+    #[test]
+    fn dailies_ingest_binds_prefix_keeps_shot_name() {
+        let _g = ENV.lock().unwrap_or_else(|e| e.into_inner());
+        let (dir, _) = setup_show("Ingest");
+        let fixture = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("fixtures/carnival.txt");
+        crate::breakdown_parse(Some(&fixture)).unwrap();
+        let before = read_show(&dir).unwrap().shots[0].name.clone();
+        let clip = dir.join("media").join("01-foo.mp4");
+        fs::write(&clip, b"fake-mp4-bytes").unwrap();
+        crate::dailies_ingest(Some(&clip), None).unwrap();
+        let show = read_show(&dir).unwrap();
+        assert_eq!(show.takes.len(), 1);
+        assert_eq!(show.shots[0].name, before);
+        assert_ne!(show.shots[0].name, "01");
+        assert_eq!(show.takes[0].shot_id, show.shots[0].id);
+        crate::dailies_circle(&show.takes[0].id).unwrap();
+        let (_, _, xml) = crate::dailies_export().unwrap();
+        assert!(xml.is_file());
+        let body = fs::read_to_string(&xml).unwrap();
+        assert!(body.contains("fcpxml"));
+    }
+
+    #[test]
+    fn circle_without_take_errors() {
+        let _g = ENV.lock().unwrap_or_else(|e| e.into_inner());
+        setup_show("NoTake");
+        let err = crate::dailies_circle("").unwrap_err().to_string();
+        assert!(err.contains("take") || err.contains("circle"), "{err}");
     }
 }

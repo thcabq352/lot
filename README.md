@@ -2,9 +2,11 @@
 
 Agent-first film tools. **Stdio first, GUI last.**
 
-- CLI: `lot status --json`
-- MCP (soon): `lot mcp`
+- CLI: `lot status --json` · `lot writer` · `lot breakdown` · `lot dailies`
+- MCP: `lot mcp`
+- Doctor: `lot doctor --json`
 - HTTP twin (later): `lot serve`
+- Hermes skill: `skills/film-lot/SKILL.md`
 
 Not Hardline. Not Pixie. Not a Wasserman re-skin. One kernel; old suite apps are adapters.
 

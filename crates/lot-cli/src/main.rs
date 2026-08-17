@@ -1,7 +1,9 @@
 use clap::{Parser, Subcommand};
 use lot_core::{
-    create_show, draft_screenplay, lock_writer, open_show, replace_cast_json, revise_screenplay,
-    set_brief, set_style, unlock_writer, upsert_cast, Status,
+    breakdown_parse, breakdown_summary, create_show, dailies_circle, dailies_export,
+    dailies_ingest, draft_screenplay, lock_writer, open_show, picture_lock, replace_cast_json,
+    revise_screenplay, set_brief, set_style, slate_set, unlock_writer, upsert_cast, wall_add,
+    Doctor, Status,
 };
 use std::path::{Path, PathBuf};
 use std::process::ExitCode;
@@ -39,6 +41,38 @@ enum Cmd {
         #[command(subcommand)]
         cmd: WriterCmd,
     },
+    /// Breakdown (ScriptBreak logic): import + parse. Agents can write.
+    Breakdown {
+        #[command(subcommand)]
+        cmd: BreakdownCmd,
+    },
+    /// Wall (Cork Board): beat cards.
+    Wall {
+        #[command(subcommand)]
+        cmd: WallCmd,
+    },
+    /// Picture (Master Canvas): lock a shot card.
+    Picture {
+        #[command(subcommand)]
+        cmd: PictureCmd,
+    },
+    /// Slate: continuity-locked prompts on shots.
+    Slate {
+        #[command(subcommand)]
+        cmd: SlateCmd,
+    },
+    /// Dailies (Circle Take): ingest, circle, FCPXML.
+    Dailies {
+        #[command(subcommand)]
+        cmd: DailiesCmd,
+    },
+    /// Cut: interchange export (FCPXML). Resolve live is an adapter later.
+    Cut {
+        #[command(subcommand)]
+        cmd: CutCmd,
+    },
+    /// Runtime probes (ffmpeg / Comfy / brains). No GUI.
+    Doctor,
     /// Native agent door (stdio MCP).
     Mcp,
 }
@@ -86,6 +120,71 @@ enum WriterCmd {
     Lock,
     /// Unlock the writer.
     Unlock,
+}
+
+#[derive(Subcommand)]
+enum BreakdownCmd {
+    /// Parse screenplay.fountain on the current show.
+    Parse,
+    /// Import a .txt / .fountain / .scriptbreak (does not delete the source).
+    Import {
+        #[arg(long)]
+        file: PathBuf,
+    },
+    /// Scene / character / location counts.
+    Status,
+}
+
+#[derive(Subcommand)]
+enum WallCmd {
+    Add {
+        #[arg(long)]
+        text: String,
+        #[arg(long)]
+        act: Option<String>,
+    },
+}
+
+#[derive(Subcommand)]
+enum PictureCmd {
+    Lock {
+        #[arg(long)]
+        shot: String,
+    },
+    Unlock {
+        #[arg(long)]
+        shot: String,
+    },
+}
+
+#[derive(Subcommand)]
+enum SlateCmd {
+    Set {
+        #[arg(long)]
+        shot: String,
+        #[arg(long)]
+        prompt: String,
+    },
+}
+
+#[derive(Subcommand)]
+enum DailiesCmd {
+    Ingest {
+        #[arg(long)]
+        file: Option<PathBuf>,
+        #[arg(long)]
+        dir: Option<PathBuf>,
+    },
+    Circle {
+        #[arg(long)]
+        take: String,
+    },
+    Export,
+}
+
+#[derive(Subcommand)]
+enum CutCmd {
+    Export,
 }
 
 fn main() -> ExitCode {
@@ -143,12 +242,186 @@ fn main() -> ExitCode {
             }
             writer_cmd(cmd, cli.json)
         }
+        Cmd::Breakdown { cmd } => {
+            if let Some(code) = apply_show(cli.show.as_deref(), cli.json) {
+                return code;
+            }
+            breakdown_cmd(cmd, cli.json)
+        }
+        Cmd::Wall { cmd } => {
+            if let Some(code) = apply_show(cli.show.as_deref(), cli.json) {
+                return code;
+            }
+            match cmd {
+                WallCmd::Add { text, act } => match wall_add(act.as_deref(), &text) {
+                    Ok((dir, show)) => ok_writer(
+                        cli.json,
+                        &dir,
+                        &show,
+                        serde_json::json!({ "wall": show.wall }),
+                        &format!("wall beat added ({})", dir.display()),
+                    ),
+                    Err(e) => fail(cli.json, &e.to_string()),
+                },
+            }
+        }
+        Cmd::Picture { cmd } => {
+            if let Some(code) = apply_show(cli.show.as_deref(), cli.json) {
+                return code;
+            }
+            let (shot, locked) = match cmd {
+                PictureCmd::Lock { shot } => (shot, true),
+                PictureCmd::Unlock { shot } => (shot, false),
+            };
+            match picture_lock(&shot, locked) {
+                Ok((dir, show)) => ok_writer(
+                    cli.json,
+                    &dir,
+                    &show,
+                    serde_json::json!({ "shots": show.shots }),
+                    &format!("picture shot {shot} locked={locked}"),
+                ),
+                Err(e) => fail(cli.json, &e.to_string()),
+            }
+        }
+        Cmd::Slate { cmd } => {
+            if let Some(code) = apply_show(cli.show.as_deref(), cli.json) {
+                return code;
+            }
+            match cmd {
+                SlateCmd::Set { shot, prompt } => match slate_set(&shot, &prompt) {
+                    Ok((dir, show)) => ok_writer(
+                        cli.json,
+                        &dir,
+                        &show,
+                        serde_json::json!({ "shots": show.shots }),
+                        &format!("slate set on shot {shot}"),
+                    ),
+                    Err(e) => fail(cli.json, &e.to_string()),
+                },
+            }
+        }
+        Cmd::Dailies { cmd } => {
+            if let Some(code) = apply_show(cli.show.as_deref(), cli.json) {
+                return code;
+            }
+            dailies_cmd(cmd, cli.json)
+        }
+        Cmd::Cut { cmd } => {
+            if let Some(code) = apply_show(cli.show.as_deref(), cli.json) {
+                return code;
+            }
+            match cmd {
+                CutCmd::Export => match dailies_export() {
+                    Ok((dir, show, file)) => ok_writer(
+                        cli.json,
+                        &dir,
+                        &show,
+                        serde_json::json!({ "export": file.display().to_string() }),
+                        &format!("cut export {}", file.display()),
+                    ),
+                    Err(e) => fail(cli.json, &e.to_string()),
+                },
+            }
+        }
+        Cmd::Doctor => {
+            let d = Doctor::probe();
+            if cli.json {
+                println!("{}", serde_json::to_string(&d).expect("doctor json"));
+            } else {
+                println!(
+                    "ffmpeg={} ffprobe={} comfy={} grok={} local={} renderer={}",
+                    d.ffmpeg, d.ffprobe, d.comfy, d.grok_configured, d.local_configured, d.renderer
+                );
+            }
+            ExitCode::SUCCESS
+        }
         Cmd::Mcp => match lot_mcp::run_stdio() {
             Ok(()) => ExitCode::SUCCESS,
             Err(e) => {
                 eprintln!("lot mcp: {e}");
                 ExitCode::from(1)
             }
+        },
+    }
+}
+
+fn breakdown_cmd(cmd: BreakdownCmd, json: bool) -> ExitCode {
+    match cmd {
+        BreakdownCmd::Parse => match breakdown_parse(None) {
+            Ok((dir, show)) => ok_writer(
+                json,
+                &dir,
+                &show,
+                breakdown_summary(&show),
+                &format!("breakdown {} scenes ({})", show.scenes.len(), dir.display()),
+            ),
+            Err(e) => fail(json, &e.to_string()),
+        },
+        BreakdownCmd::Import { file } => match breakdown_parse(Some(&file)) {
+            Ok((dir, show)) => ok_writer(
+                json,
+                &dir,
+                &show,
+                breakdown_summary(&show),
+                &format!("imported {} scenes ({})", show.scenes.len(), dir.display()),
+            ),
+            Err(e) => fail(json, &e.to_string()),
+        },
+        BreakdownCmd::Status => match lot_core::require_current() {
+            Ok((dir, show)) => ok_writer(
+                json,
+                &dir,
+                &show,
+                breakdown_summary(&show),
+                &format!(
+                    "breakdown scenes={} shots={} ({})",
+                    show.scenes.len(),
+                    show.shots.len(),
+                    dir.display()
+                ),
+            ),
+            Err(e) => fail(json, &e.to_string()),
+        },
+    }
+}
+
+fn dailies_cmd(cmd: DailiesCmd, json: bool) -> ExitCode {
+    match cmd {
+        DailiesCmd::Ingest { file, dir } => match dailies_ingest(file.as_deref(), dir.as_deref()) {
+            Ok((show_dir, show)) => ok_writer(
+                json,
+                &show_dir,
+                &show,
+                serde_json::json!({
+                    "takes": show.takes,
+                    "shots": show.shots.iter().map(|s| {
+                        serde_json::json!({ "num": s.num, "name": s.name })
+                    }).collect::<Vec<_>>()
+                }),
+                &format!("ingested {} takes", show.takes.len()),
+            ),
+            Err(e) => fail(json, &e.to_string()),
+        },
+        DailiesCmd::Circle { take } => match dailies_circle(&take) {
+            Ok((dir, show)) => ok_writer(
+                json,
+                &dir,
+                &show,
+                serde_json::json!({ "takes": show.takes }),
+                &format!("circled {take}"),
+            ),
+            Err(e) => fail(json, &e.to_string()),
+        },
+        DailiesCmd::Export => match dailies_export() {
+            Ok((dir, show, file)) => ok_writer(
+                json,
+                &dir,
+                &show,
+                serde_json::json!({ "export": file.display().to_string() }),
+                &format!("exported {}", file.display()),
+            ),
+            Err(e) => fail(json, &e.to_string()),
         },
     }
 }

@@ -164,6 +164,110 @@ fn tools() -> Value {
                 "type": "object",
                 "properties": { "path": path_prop() }
             }
+        },
+        {
+            "name": "lot_breakdown_import",
+            "description": "Import a .txt / .fountain / .scriptbreak and parse scenes. Does not delete the source.",
+            "inputSchema": {
+                "type": "object",
+                "properties": {
+                    "file": { "type": "string", "description": "Screenplay or .scriptbreak path." },
+                    "path": path_prop()
+                },
+                "required": ["file"]
+            }
+        },
+        {
+            "name": "lot_breakdown_parse",
+            "description": "Parse screenplay.fountain on the current show into scenes + default shots.",
+            "inputSchema": {
+                "type": "object",
+                "properties": { "path": path_prop() }
+            }
+        },
+        {
+            "name": "lot_wall_add",
+            "description": "Add a Cork Board beat card.",
+            "inputSchema": {
+                "type": "object",
+                "properties": {
+                    "text": { "type": "string" },
+                    "act": { "type": "string" },
+                    "path": path_prop()
+                },
+                "required": ["text"]
+            }
+        },
+        {
+            "name": "lot_picture_lock",
+            "description": "Lock or unlock a Picture shot card. Does not rename the shot.",
+            "inputSchema": {
+                "type": "object",
+                "properties": {
+                    "shot": { "type": "string" },
+                    "locked": { "type": "boolean" },
+                    "path": path_prop()
+                },
+                "required": ["shot"]
+            }
+        },
+        {
+            "name": "lot_slate_set",
+            "description": "Set a continuity-locked prompt on a shot.",
+            "inputSchema": {
+                "type": "object",
+                "properties": {
+                    "shot": { "type": "string" },
+                    "prompt": { "type": "string" },
+                    "path": path_prop()
+                },
+                "required": ["shot", "prompt"]
+            }
+        },
+        {
+            "name": "lot_dailies_ingest",
+            "description": "Ingest a clip by filename prefix (01-foo.mp4 → shot 01). Does not rename the shot to 01.",
+            "inputSchema": {
+                "type": "object",
+                "properties": {
+                    "file": { "type": "string" },
+                    "dir": { "type": "string" },
+                    "path": path_prop()
+                }
+            }
+        },
+        {
+            "name": "lot_dailies_circle",
+            "description": "Circle a take by id. Requires take. No GUI.",
+            "inputSchema": {
+                "type": "object",
+                "properties": {
+                    "take": { "type": "string" },
+                    "path": path_prop()
+                },
+                "required": ["take"]
+            }
+        },
+        {
+            "name": "lot_dailies_export",
+            "description": "Export circled takes as FCPXML.",
+            "inputSchema": {
+                "type": "object",
+                "properties": { "path": path_prop() }
+            }
+        },
+        {
+            "name": "lot_cut_export",
+            "description": "Cut interchange: same as dailies export (FCPXML). Resolve live is an adapter later.",
+            "inputSchema": {
+                "type": "object",
+                "properties": { "path": path_prop() }
+            }
+        },
+        {
+            "name": "lot_doctor",
+            "description": "Probe ffmpeg, Comfy :8188, and whether Grok/local brains are configured.",
+            "inputSchema": { "type": "object", "properties": {} }
         }
     ])
 }
@@ -350,6 +454,111 @@ fn call(params: Option<&Value>) -> Value {
             })),
             Err(e) => tool_err(&e.to_string()),
         }),
+        "lot_breakdown_import" => with_path(&args, || {
+            let file = args.get("file").and_then(|v| v.as_str()).unwrap_or("");
+            if file.is_empty() {
+                return tool_err("file is required");
+            }
+            match lot_core::breakdown_parse(Some(Path::new(file))) {
+                Ok((dir, show)) => tool_ok(&json!({
+                    "ok": true,
+                    "show": dir.display().to_string(),
+                    "rev": show.rev,
+                    "summary": lot_core::breakdown_summary(&show),
+                })),
+                Err(e) => tool_err(&e.to_string()),
+            }
+        }),
+        "lot_breakdown_parse" => with_path(&args, || match lot_core::breakdown_parse(None) {
+            Ok((dir, show)) => tool_ok(&json!({
+                "ok": true,
+                "show": dir.display().to_string(),
+                "rev": show.rev,
+                "summary": lot_core::breakdown_summary(&show),
+            })),
+            Err(e) => tool_err(&e.to_string()),
+        }),
+        "lot_wall_add" => with_path(&args, || {
+            let text = args.get("text").and_then(|v| v.as_str()).unwrap_or("");
+            let act = args.get("act").and_then(|v| v.as_str());
+            match lot_core::wall_add(act, text) {
+                Ok((dir, show)) => tool_ok(&json!({
+                    "ok": true,
+                    "show": dir.display().to_string(),
+                    "rev": show.rev,
+                    "wall": show.wall,
+                })),
+                Err(e) => tool_err(&e.to_string()),
+            }
+        }),
+        "lot_picture_lock" => with_path(&args, || {
+            let shot = args.get("shot").and_then(|v| v.as_str()).unwrap_or("");
+            let locked = args.get("locked").and_then(|v| v.as_bool()).unwrap_or(true);
+            match lot_core::picture_lock(shot, locked) {
+                Ok((dir, show)) => tool_ok(&json!({
+                    "ok": true,
+                    "show": dir.display().to_string(),
+                    "rev": show.rev,
+                    "shots": show.shots,
+                })),
+                Err(e) => tool_err(&e.to_string()),
+            }
+        }),
+        "lot_slate_set" => with_path(&args, || {
+            let shot = args.get("shot").and_then(|v| v.as_str()).unwrap_or("");
+            let prompt = args.get("prompt").and_then(|v| v.as_str()).unwrap_or("");
+            match lot_core::slate_set(shot, prompt) {
+                Ok((dir, show)) => tool_ok(&json!({
+                    "ok": true,
+                    "show": dir.display().to_string(),
+                    "rev": show.rev,
+                })),
+                Err(e) => tool_err(&e.to_string()),
+            }
+        }),
+        "lot_dailies_ingest" => with_path(&args, || {
+            let file = args.get("file").and_then(|v| v.as_str()).map(Path::new);
+            let dir = args.get("dir").and_then(|v| v.as_str()).map(Path::new);
+            match lot_core::dailies_ingest(file, dir) {
+                Ok((show_dir, show)) => tool_ok(&json!({
+                    "ok": true,
+                    "show": show_dir.display().to_string(),
+                    "rev": show.rev,
+                    "takes": show.takes,
+                })),
+                Err(e) => tool_err(&e.to_string()),
+            }
+        }),
+        "lot_dailies_circle" => with_path(&args, || {
+            let take = args.get("take").and_then(|v| v.as_str()).unwrap_or("");
+            match lot_core::dailies_circle(take) {
+                Ok((dir, show)) => tool_ok(&json!({
+                    "ok": true,
+                    "show": dir.display().to_string(),
+                    "rev": show.rev,
+                    "takes": show.takes,
+                })),
+                Err(e) => tool_err(&e.to_string()),
+            }
+        }),
+        "lot_dailies_export" | "lot_cut_export" => {
+            with_path(&args, || match lot_core::dailies_export() {
+                Ok((dir, show, file)) => tool_ok(&json!({
+                    "ok": true,
+                    "show": dir.display().to_string(),
+                    "rev": show.rev,
+                    "export": file.display().to_string(),
+                })),
+                Err(e) => tool_err(&e.to_string()),
+            })
+        }
+        "lot_doctor" => {
+            let d = lot_core::Doctor::probe();
+            match serde_json::to_value(&d) {
+                Ok(v) => tool_ok(&v),
+                Err(e) => tool_err(&e.to_string()),
+            }
+        }
         "" => tool_err("tool name is required"),
         other => tool_err(&format!("Unknown tool: {other}")),
     }
@@ -461,6 +670,12 @@ mod tests {
             "lot_writer_revise",
             "lot_writer_lock",
             "lot_writer_unlock",
+            "lot_breakdown_import",
+            "lot_breakdown_parse",
+            "lot_dailies_ingest",
+            "lot_dailies_circle",
+            "lot_dailies_export",
+            "lot_doctor",
         ] {
             assert!(names.contains(&n), "missing {n} in {names:?}");
         }
