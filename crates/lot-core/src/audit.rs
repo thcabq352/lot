@@ -221,4 +221,36 @@ mod tests {
         assert_eq!(redact_value(&json!("sk-live-xyz")), "[redacted]");
         assert_eq!(redact_value(&json!("wide tent")), "wide tent");
     }
+
+    #[test]
+    fn mutation_json_matches_cli_envelope() {
+        let dir = std::env::temp_dir().join(format!(
+            "lot-mut-json-{}-{}",
+            std::process::id(),
+            std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .map(|d| d.as_nanos())
+                .unwrap_or(0)
+        ));
+        let _ = std::fs::remove_dir_all(&dir);
+        std::env::remove_var("LOT_SHOW");
+        std::env::remove_var("LOT_AGENT");
+        crate::agent::clear_agent();
+        std::env::set_var(
+            "LOT_HOME",
+            std::env::temp_dir().join(format!("lot-mut-home-{}", std::process::id())),
+        );
+        let (dir, show) = crate::create_show(&dir, Some("Envelope")).unwrap();
+        let v = mutation_json(&dir, &show, json!({ "id": show.id, "name": show.name }));
+        assert_eq!(v["ok"], true);
+        assert_eq!(v["show"], dir.display().to_string());
+        assert_eq!(v["show_id"], show.id);
+        assert_eq!(v["rev"], show.rev);
+        assert!(v["event_id"].as_str().is_some_and(|s| s.starts_with("ev-")));
+        assert_eq!(v["who"], "human");
+        assert_eq!(v["school"]["enabled"], false);
+        assert_eq!(v["id"], show.id);
+        assert_eq!(v["name"], "Envelope");
+        let _ = std::fs::remove_dir_all(&dir);
+    }
 }
