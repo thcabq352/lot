@@ -6,8 +6,8 @@ use lot_core::{
     mutation_json, open_show, picture_lock, replace_cast_json, resource_read, restore_show,
     revise_screenplay, set_brief, set_budget, set_style, show_log, slate_compile, slate_lora,
     slate_set, slate_target, snapshot_list, snapshot_show, stage_camera, stage_export, stage_place,
-    stems_soundtrack, stems_vo, stills_describe, stills_generate, unlock_show, unlock_writer,
-    upsert_cast, wall_add, Doctor, Status,
+    stems_soundtrack, stems_vo, stills_describe, stills_generate, undo_show, unlock_show,
+    unlock_writer, upsert_cast, wall_add, Doctor, Status,
 };
 use std::path::{Path, PathBuf};
 use std::process::ExitCode;
@@ -153,6 +153,8 @@ enum Cmd {
         #[arg(long)]
         rev: u64,
     },
+    /// Undo the last mutation from the event log. No prior snapshot required.
+    Undo,
     /// Claim the show. Second agent gets locked_by, not a silent clobber.
     Lock,
     /// Release the show lock. Holder or --force.
@@ -916,6 +918,24 @@ fn main() -> ExitCode {
                     ),
                     Err(e) => fail(cli.json, &e.to_string()),
                 }
+            }
+        }
+        Cmd::Undo => {
+            if let Some(code) = apply_show(cli.show.as_deref(), cli.json) {
+                return code;
+            }
+            match undo_show() {
+                Ok((dir, show, undid)) => ok_writer(
+                    cli.json,
+                    &dir,
+                    &show,
+                    serde_json::json!({
+                        "undid": undid,
+                        "brief": show.writer.brief,
+                    }),
+                    &format!("undid {undid} → now rev {}", show.rev),
+                ),
+                Err(e) => fail(cli.json, &e.to_string()),
             }
         }
         Cmd::Restore { rev } => {

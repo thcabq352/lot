@@ -583,6 +583,14 @@ fn tools() -> Value {
             }
         },
         {
+            "name": "lot_undo",
+            "description": "Undo the last mutation from the event log. No prior snapshot required. Already undone or create-only → nothing to undo —.",
+            "inputSchema": {
+                "type": "object",
+                "properties": { "path": path_prop() }
+            }
+        },
+        {
             "name": "lot_lock",
             "description": "Claim the show. One writer at a time. Second agent gets locked_by, not a silent clobber.",
             "inputSchema": {
@@ -1260,6 +1268,17 @@ fn dispatch(name: &str, args: &Value) -> Value {
                 Err(e) => tool_err(&e.to_string()),
             }
         }),
+        "lot_undo" => with_path(&args, || match lot_core::undo_show() {
+            Ok((dir, show, undid)) => mut_ok(
+                &dir,
+                &show,
+                json!({
+                    "undid": undid,
+                    "brief": show.writer.brief,
+                }),
+            ),
+            Err(e) => tool_err(&e.to_string()),
+        }),
         "lot_lock" => with_path(&args, || match lot_core::lock_show() {
             Ok((dir, show)) => mut_ok(&dir, &show, json!({ "locked_by": show.locked_by })),
             Err(e) => tool_err(&e.to_string()),
@@ -1566,6 +1585,7 @@ mod tests {
             "lot_stage_export",
             "lot_snapshot",
             "lot_restore",
+            "lot_undo",
             "lot_lock",
             "lot_unlock",
             "lot_budget",
@@ -2075,5 +2095,64 @@ mod tests {
             "id": 1
         })));
         lot_core::clear_cancel();
+    }
+
+    #[test]
+    fn undo_reverts_last_brief() {
+        let _g = ENV_LOCK.lock().unwrap_or_else(|e| e.into_inner());
+        let root = std::env::temp_dir().join(format!(
+            "lot-mcp-undo-{}-{}",
+            std::process::id(),
+            std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .map(|d| d.as_nanos())
+                .unwrap_or(0)
+        ));
+        let _ = std::fs::remove_dir_all(&root);
+        std::fs::create_dir_all(&root).unwrap();
+        std::env::set_var("LOT_HOME", root.join("home"));
+        std::env::remove_var("LOT_SHOW");
+        lot_core::clear_caps();
+        lot_core::clear_agent();
+
+        let show_dir = root.join("show");
+        call_body(
+            "lot_create",
+            json!({ "path": show_dir.display().to_string(), "name": "Undo" }),
+        );
+        call_body(
+            "lot_writer_brief",
+            json!({
+                "path": show_dir.display().to_string(),
+                "text": "Ada waits."
+            }),
+        );
+        call_body(
+            "lot_writer_brief",
+            json!({
+                "path": show_dir.display().to_string(),
+                "text": "She puts it on."
+            }),
+        );
+        let undone = call_body(
+            "lot_undo",
+            json!({ "path": show_dir.display().to_string() }),
+        );
+        assert_mutation_envelope(&undone);
+        assert_eq!(undone["brief"], "Ada waits.");
+        assert!(
+            undone["undid"].as_str().unwrap().starts_with("ev-"),
+            "{undone}"
+        );
+        let raw = handle(&json!({
+            "jsonrpc":"2.0","id":13,"method":"tools/call",
+            "params":{"name":"lot_undo","arguments":{
+                "path": show_dir.display().to_string()
+            }}
+        }))
+        .unwrap();
+        assert_eq!(raw["result"]["isError"], true, "{raw}");
+        let text = raw["result"]["content"][0]["text"].as_str().unwrap();
+        assert!(text.starts_with("nothing to undo"), "{text}");
     }
 }

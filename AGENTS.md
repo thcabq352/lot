@@ -28,7 +28,7 @@ Show budget: `lot budget --spend N --render N` (or `--clear-spend` / `--clear-re
 
 `lot mcp` is NDJSON JSON-RPC 2.0 on stdin/stdout. Tools:
 
-- `lot_status`, `lot_create`, `lot_open`, `lot_doctor`, `lot_help`, `lot_snapshot`, `lot_restore`, `lot_lock`, `lot_unlock`, `lot_budget`, `lot_log`, `lot_handoff`
+- `lot_status`, `lot_create`, `lot_open`, `lot_doctor`, `lot_help`, `lot_snapshot`, `lot_restore`, `lot_undo`, `lot_lock`, `lot_unlock`, `lot_budget`, `lot_log`, `lot_handoff`
 - `lot_show`, `lot_scene`, `lot_shot`, `lot_take`, `lot_import`
 - `lot_writer_brief`, `lot_writer_style`, `lot_writer_cast`, `lot_writer_draft`, `lot_writer_revise`, `lot_writer_lock`, `lot_writer_unlock`
 - `lot_breakdown_import`, `lot_breakdown_parse`
@@ -89,10 +89,11 @@ Writes `stage/block.json`. Does **not** invent glTF / depth. 3D grey-box stays i
 lot snapshot --json
 lot snapshot --list --json
 lot restore --rev 6 --json
+lot undo --json
 lot help --json
 ```
 
-A later draft must not eat an earlier one. Restore keeps the live `locked_by` and show budget. `lot help --json` is the contract.
+A later draft must not eat an earlier one. Restore keeps the live `locked_by` and show budget. `lot undo` reverts the last mutation from the event log (journal of the previous rev). No prior snapshot. Create-only or already undone → `nothing to undo —`. Keeps live `locked_by` and budget. `lot help --json` is the contract.
 
 ## Show lock / jail / budget
 
