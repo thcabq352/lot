@@ -772,10 +772,48 @@ mod tests {
         assert_ne!(show.shots[0].name, "01");
         assert_eq!(show.takes[0].shot_id, show.shots[0].id);
         crate::dailies_circle(&show.takes[0].id).unwrap();
-        let (_, _, xml) = crate::dailies_export().unwrap();
-        assert!(xml.is_file());
-        let body = fs::read_to_string(&xml).unwrap();
+        let (_, _, report) = crate::dailies_export().unwrap();
+        assert!(report.file.is_file());
+        assert!(!report.resumed);
+        let body = fs::read_to_string(&report.file).unwrap();
         assert!(body.contains("fcpxml"));
+        assert!(body.contains(r#"<format id="r1""#));
+        assert!(body.contains("file://"));
+        assert!(body.contains("media-rep"));
+    }
+
+    #[test]
+    fn cut_export_same_circled_takes_is_idempotent() {
+        let _g = ENV.lock().unwrap_or_else(|e| e.into_inner());
+        let (dir, _) = setup_show("CutIdempotent");
+        let fixture = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("fixtures/carnival.txt");
+        crate::breakdown_parse(Some(&fixture)).unwrap();
+        let clip = dir.join("media").join("01-foo.mp4");
+        fs::create_dir_all(clip.parent().unwrap()).unwrap();
+        fs::write(&clip, b"fake-mp4-bytes-cut-export").unwrap();
+        crate::dailies_ingest(Some(&clip), None).unwrap();
+        let take_id = read_show(&dir).unwrap().takes[0].id.clone();
+        crate::dailies_circle(&take_id).unwrap();
+        let first = crate::dailies_export().unwrap();
+        assert!(!first.2.resumed);
+        let xml = fs::read_to_string(&first.2.file).unwrap();
+        let events_after_first = fs::read_to_string(dir.join("events.jsonl")).unwrap();
+        let export_count = events_after_first
+            .lines()
+            .filter(|l| l.contains("\"dailies.export\""))
+            .count();
+        assert_eq!(export_count, 1);
+        let second = crate::dailies_export().unwrap();
+        assert!(second.2.resumed, "same circled takes must resume");
+        assert_eq!(second.2.file, first.2.file);
+        assert_eq!(fs::read_to_string(&second.2.file).unwrap(), xml);
+        let events_after_second = fs::read_to_string(dir.join("events.jsonl")).unwrap();
+        let export_count2 = events_after_second
+            .lines()
+            .filter(|l| l.contains("\"dailies.export\""))
+            .count();
+        assert_eq!(export_count2, 1, "resume must not append dailies.export");
+        assert_eq!(read_show(&dir).unwrap().rev, first.1.rev);
     }
 
     #[test]

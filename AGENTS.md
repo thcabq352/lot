@@ -198,7 +198,7 @@ lot dailies circle --take tk-1 --json
 lot dailies export --json
 ```
 
-`01-foo.mp4` binds to shot `01` and **does not** rename the shot to `"01"`. Circle without `--take` exits non-zero (no GUI).
+`01-foo.mp4` binds to shot `01` and **does not** rename the shot to `"01"`. Circle without `--take` exits non-zero (no GUI). Same circled takes twice is a no-op (no second `dailies.export` event). FCPXML 1.9 includes a format resource, `file://` URLs, and a cumulative spine.
 
 ## Stems (soundtrack + VO)
 

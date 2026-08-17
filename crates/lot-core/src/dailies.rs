@@ -14,6 +14,13 @@ pub struct IngestReport {
     pub resumed: u32,
 }
 
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct ExportReport {
+    pub file: PathBuf,
+    pub takes: usize,
+    pub resumed: bool,
+}
+
 pub fn dailies_ingest(
     file: Option<&Path>,
     dir: Option<&Path>,
@@ -241,7 +248,7 @@ pub fn dailies_circle(take_id: &str) -> Result<(PathBuf, Show), ShowError> {
     Ok((dir, show))
 }
 
-pub fn dailies_export() -> Result<(PathBuf, Show, PathBuf), ShowError> {
+pub fn dailies_export() -> Result<(PathBuf, Show, ExportReport), ShowError> {
     crate::caps::require(crate::caps::Cap::Export)?;
     let (dir, show) = require_write_current()?;
     let circled: Vec<&Take> = show.takes.iter().filter(|t| t.circled).collect();
@@ -250,39 +257,77 @@ pub fn dailies_export() -> Result<(PathBuf, Show, PathBuf), ShowError> {
             "no circled takes — lot dailies circle --take".into(),
         ));
     }
-    let xml = fcpxml(&show, &circled);
+    let takes_n = circled.len();
+    let xml = fcpxml(&show.name, &circled, &dir);
+    drop(circled);
     let out = dir.join("export.fcpxml");
+    if out.is_file() {
+        if let Ok(existing) = fs::read_to_string(&out) {
+            if existing == xml {
+                return Ok((
+                    dir,
+                    show,
+                    ExportReport {
+                        file: out,
+                        takes: takes_n,
+                        resumed: true,
+                    },
+                ));
+            }
+        }
+    }
     fs::write(&out, xml)?;
     append_event_with(
         &dir,
         "dailies.export",
         &show,
-        Some(serde_json::json!({ "file": out.display().to_string(), "takes": circled.len() })),
+        Some(serde_json::json!({
+            "file": out.display().to_string(),
+            "takes": takes_n
+        })),
     )?;
-    Ok((dir, show, out))
+    Ok((
+        dir,
+        show,
+        ExportReport {
+            file: out,
+            takes: takes_n,
+            resumed: false,
+        },
+    ))
 }
 
-fn fcpxml(show: &Show, takes: &[&Take]) -> String {
+const FCP_FPS: i64 = 24;
+
+fn take_frames(t: &Take) -> i64 {
+    let dur = t.duration_secs.filter(|d| *d > 0.0).unwrap_or(5.0);
+    let frames = (dur * FCP_FPS as f64).round() as i64;
+    frames.max(1)
+}
+
+fn fcpxml(title: &str, takes: &[&Take], show_dir: &Path) -> String {
+    let mut assets = String::from(
+        "    <format id=\"r1\" name=\"FFVideoFormat1080p24\" frameDuration=\"1/24s\" width=\"1920\" height=\"1080\"/>\n",
+    );
     let mut clips = String::new();
+    let mut offset: i64 = 0;
     for (i, t) in takes.iter().enumerate() {
-        let dur = t.duration_secs.unwrap_or(5.0);
-        let frames = (dur * 24.0).round() as i64;
+        let frames = take_frames(t);
+        let asset_id = i + 2;
         let name = xml_esc(&t.filename);
-        let path = xml_esc(&t.path);
-        clips.push_str(&format!(
-            "        <asset-clip name=\"{name}\" ref=\"r{i}\" offset=\"{i}/1s\" duration=\"{frames}/24s\" />\n"
-        ));
-        let _ = path;
-    }
-    let mut assets = String::new();
-    for (i, t) in takes.iter().enumerate() {
-        let dur = t.duration_secs.unwrap_or(5.0);
-        let frames = (dur * 24.0).round() as i64;
+        let src = xml_esc(&file_url(&t.path));
+        let uid = if t.sha256.is_empty() {
+            String::new()
+        } else {
+            format!(" uid=\"{}\"", xml_esc(&t.sha256))
+        };
         assets.push_str(&format!(
-            "        <asset id=\"r{i}\" name=\"{name}\" src=\"file://localhost/{src}\" duration=\"{frames}/24s\" hasVideo=\"1\" />\n",
-            name = xml_esc(&t.filename),
-            src = t.path.replace('\\', "/").trim_start_matches('/'),
+            "    <asset id=\"r{asset_id}\" name=\"{name}\"{uid} start=\"0s\" duration=\"{frames}/24s\" hasVideo=\"1\" format=\"r1\">\n      <media-rep kind=\"original-media\" src=\"{src}\"/>\n    </asset>\n"
         ));
+        clips.push_str(&format!(
+            "        <asset-clip name=\"{name}\" ref=\"r{asset_id}\" offset=\"{offset}/24s\" duration=\"{frames}/24s\" format=\"r1\"/>\n"
+        ));
+        offset += frames;
     }
     format!(
         r#"<?xml version="1.0" encoding="UTF-8"?>
@@ -290,10 +335,10 @@ fn fcpxml(show: &Show, takes: &[&Take]) -> String {
 <fcpxml version="1.9">
   <resources>
 {assets}  </resources>
-  <library>
+  <library location="{lib}">
     <event name="{title}">
       <project name="{title}">
-        <sequence format="r0">
+        <sequence format="r1" duration="{total}/24s" tcStart="0s" tcFormat="NDF">
           <spine>
 {clips}          </spine>
         </sequence>
@@ -302,10 +347,35 @@ fn fcpxml(show: &Show, takes: &[&Take]) -> String {
   </library>
 </fcpxml>
 "#,
-        title = xml_esc(&show.name),
+        title = xml_esc(title),
         assets = assets,
-        clips = clips
+        clips = clips,
+        total = offset,
+        lib = xml_esc(&file_url(&show_dir.display().to_string())),
     )
+}
+
+fn file_url(path: &str) -> String {
+    let p = Path::new(path);
+    let abs = std::path::absolute(p).unwrap_or_else(|_| p.to_path_buf());
+    let mut s = abs.to_string_lossy().replace('\\', "/");
+    if !s.starts_with('/') {
+        s.insert(0, '/');
+    }
+    format!("file://{}", percent_encode_path(&s))
+}
+
+fn percent_encode_path(s: &str) -> String {
+    let mut out = String::with_capacity(s.len());
+    for b in s.bytes() {
+        match b {
+            b'A'..=b'Z' | b'a'..=b'z' | b'0'..=b'9' | b'/' | b':' | b'-' | b'_' | b'.' | b'~' => {
+                out.push(b as char);
+            }
+            _ => out.push_str(&format!("%{b:02X}")),
+        }
+    }
+    out
 }
 
 fn xml_esc(s: &str) -> String {
@@ -353,5 +423,53 @@ mod tests {
         };
         assert_eq!(shot.name, "INT. TENT - NIGHT");
         assert!(shot_nums_match(&shot.num, "01"));
+    }
+
+    #[test]
+    fn fcpxml_has_format_file_url_and_cumulative_offsets() {
+        let t1 = Take {
+            id: "tk-1".into(),
+            filename: "01-foo.mp4".into(),
+            path: "/tmp/show/media/01-foo.mp4".into(),
+            duration_secs: Some(2.0),
+            circled: true,
+            ..Take::default()
+        };
+        let t2 = Take {
+            id: "tk-2".into(),
+            filename: "02-bar.mp4".into(),
+            path: "/tmp/show/media/02 bar.mp4".into(),
+            duration_secs: Some(3.0),
+            circled: true,
+            ..Take::default()
+        };
+        let xml = fcpxml("Carnival", &[&t1, &t2], Path::new("/tmp/show"));
+        assert!(xml.contains(r#"<format id="r1""#));
+        assert!(xml.contains(r#"<sequence format="r1""#));
+        assert!(xml.contains(r#"<asset id="r2""#));
+        assert!(xml.contains(r#"<asset id="r3""#));
+        assert!(xml.contains(r#"ref="r2""#));
+        assert!(xml.contains(r#"ref="r3""#));
+        assert!(xml.contains(r#"offset="0/24s""#));
+        assert!(xml.contains(r#"offset="48/24s""#));
+        assert!(xml.contains(r#"duration="120/24s""#));
+        assert!(xml.contains("file://"));
+        assert!(xml.contains("media-rep"));
+        assert!(
+            xml.contains("%20"),
+            "spaces in paths must be percent-encoded"
+        );
+        assert!(!xml.contains(r#"format="r0""#));
+        assert!(!xml.contains("file://localhost/"));
+    }
+
+    #[test]
+    fn file_url_is_absolute_file_scheme() {
+        let unix = file_url("/tmp/show/media/01-foo.mp4");
+        assert!(unix.starts_with("file:///"), "{unix}");
+        assert!(!unix.contains("localhost"));
+        let win = file_url(r"C:\Users\thcab\lot\media\01-foo.mp4");
+        assert!(win.starts_with("file:///"), "{win}");
+        assert!(win.contains("C:"), "{win}");
     }
 }

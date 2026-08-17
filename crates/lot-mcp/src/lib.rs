@@ -519,7 +519,7 @@ fn tools() -> Value {
         },
         {
             "name": "lot_dailies_export",
-            "description": "Export circled takes as FCPXML.",
+            "description": "Export circled takes as FCPXML 1.9 (format + file:// URLs). Same circled takes is a no-op.",
             "inputSchema": {
                 "type": "object",
                 "properties": { "path": path_prop() }
@@ -527,7 +527,7 @@ fn tools() -> Value {
         },
         {
             "name": "lot_cut_export",
-            "description": "Cut interchange: same as dailies export (FCPXML). Resolve live is an adapter later.",
+            "description": "Cut interchange: same FCPXML as dailies export. Same circled takes is a no-op. Resolve live is an adapter later.",
             "inputSchema": {
                 "type": "object",
                 "properties": { "path": path_prop() }
@@ -1208,9 +1208,15 @@ fn dispatch(name: &str, args: &Value) -> Value {
         }),
         "lot_dailies_export" | "lot_cut_export" => {
             with_path(&args, || match lot_core::dailies_export() {
-                Ok((dir, show, file)) => {
-                    mut_ok(&dir, &show, json!({ "export": file.display().to_string() }))
-                }
+                Ok((dir, show, report)) => mut_ok(
+                    &dir,
+                    &show,
+                    json!({
+                        "export": report.file.display().to_string(),
+                        "takes": report.takes,
+                        "resumed": report.resumed
+                    }),
+                ),
                 Err(e) => tool_err(&e.to_string()),
             })
         }
@@ -1922,6 +1928,91 @@ mod tests {
         assert_eq!(second["rev"], rev);
         assert_eq!(second["resumed"], 1);
         assert_eq!(second["ingested"], 0);
+    }
+
+    #[test]
+    fn cut_export_same_circled_takes_is_idempotent() {
+        let _g = ENV_LOCK.lock().unwrap_or_else(|e| e.into_inner());
+        let root = std::env::temp_dir().join(format!(
+            "lot-mcp-cut-export-{}-{}",
+            std::process::id(),
+            std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .map(|d| d.as_nanos())
+                .unwrap_or(0)
+        ));
+        let _ = std::fs::remove_dir_all(&root);
+        std::fs::create_dir_all(&root).unwrap();
+        std::env::set_var("LOT_HOME", root.join("home"));
+        std::env::remove_var("LOT_SHOW");
+        lot_core::clear_caps();
+        lot_core::clear_agent();
+
+        let show_dir = root.join("show");
+        call_body(
+            "lot_create",
+            json!({ "path": show_dir.display().to_string(), "name": "Cut" }),
+        );
+        let script = root.join("script.txt");
+        std::fs::write(
+            &script,
+            "INT. TENT - NIGHT\n\nADA (quietly)\nDon't put it on.\n",
+        )
+        .unwrap();
+        call_body(
+            "lot_breakdown_import",
+            json!({
+                "path": show_dir.display().to_string(),
+                "file": script.display().to_string()
+            }),
+        );
+        let clip = show_dir.join("media").join("01-foo.mp4");
+        std::fs::create_dir_all(clip.parent().unwrap()).unwrap();
+        std::fs::write(&clip, b"mcp-cut-export-bytes").unwrap();
+        let ingested = call_body(
+            "lot_dailies_ingest",
+            json!({
+                "path": show_dir.display().to_string(),
+                "file": clip.display().to_string()
+            }),
+        );
+        let take = ingested["takes"][0]["id"].as_str().unwrap().to_string();
+        call_body(
+            "lot_dailies_circle",
+            json!({
+                "path": show_dir.display().to_string(),
+                "take": take
+            }),
+        );
+        let first = call_body(
+            "lot_cut_export",
+            json!({ "path": show_dir.display().to_string() }),
+        );
+        assert_mutation_envelope(&first);
+        assert_eq!(first["resumed"], false);
+        assert_eq!(first["takes"], 1);
+        let export = first["export"].as_str().unwrap().to_string();
+        let xml = std::fs::read_to_string(&export).unwrap();
+        assert!(xml.contains(r#"<format id="r1""#));
+        assert!(xml.contains("file://"));
+        let events_after_first = std::fs::read_to_string(show_dir.join("events.jsonl")).unwrap();
+        let export_count = events_after_first
+            .lines()
+            .filter(|l| l.contains("\"dailies.export\""))
+            .count();
+        assert_eq!(export_count, 1);
+        let second = call_body(
+            "lot_dailies_export",
+            json!({ "path": show_dir.display().to_string() }),
+        );
+        assert_eq!(second["resumed"], true);
+        assert_eq!(second["export"], export);
+        let events_after_second = std::fs::read_to_string(show_dir.join("events.jsonl")).unwrap();
+        let export_count2 = events_after_second
+            .lines()
+            .filter(|l| l.contains("\"dailies.export\""))
+            .count();
+        assert_eq!(export_count2, 1);
     }
 
     #[test]
