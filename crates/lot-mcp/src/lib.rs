@@ -1089,7 +1089,15 @@ fn dispatch(name: &str, args: &Value) -> Value {
             let file = args.get("file").and_then(|v| v.as_str()).map(Path::new);
             let dir = args.get("dir").and_then(|v| v.as_str()).map(Path::new);
             match lot_core::dailies_ingest(file, dir) {
-                Ok((show_dir, show)) => mut_ok(&show_dir, &show, json!({ "takes": show.takes })),
+                Ok((show_dir, show, report)) => mut_ok(
+                    &show_dir,
+                    &show,
+                    json!({
+                        "ingested": report.ingested,
+                        "resumed": report.resumed,
+                        "takes": show.takes
+                    }),
+                ),
                 Err(e) => tool_err(&e.to_string()),
             }
         }),
@@ -1728,5 +1736,69 @@ mod tests {
         }))
         .unwrap();
         assert_eq!(raw["result"]["structuredContent"]["ok"], true);
+    }
+
+    #[test]
+    fn dailies_ingest_is_idempotent() {
+        let root = std::env::temp_dir().join(format!(
+            "lot-mcp-ingest-{}-{}",
+            std::process::id(),
+            std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .map(|d| d.as_nanos())
+                .unwrap_or(0)
+        ));
+        let _ = std::fs::remove_dir_all(&root);
+        std::fs::create_dir_all(&root).unwrap();
+        std::env::set_var("LOT_HOME", root.join("home"));
+        std::env::remove_var("LOT_SHOW");
+        lot_core::clear_caps();
+        lot_core::clear_agent();
+
+        let show_dir = root.join("show");
+        call_body(
+            "lot_create",
+            json!({ "path": show_dir.display().to_string(), "name": "Ingest" }),
+        );
+        let script = root.join("script.txt");
+        std::fs::write(
+            &script,
+            "INT. TENT - NIGHT\n\nADA (quietly)\nDon't put it on.\n",
+        )
+        .unwrap();
+        call_body(
+            "lot_breakdown_import",
+            json!({
+                "path": show_dir.display().to_string(),
+                "file": script.display().to_string()
+            }),
+        );
+        let clip = show_dir.join("media").join("01-foo.mp4");
+        std::fs::create_dir_all(clip.parent().unwrap()).unwrap();
+        std::fs::write(&clip, b"mcp-ingest-bytes").unwrap();
+        let first = call_body(
+            "lot_dailies_ingest",
+            json!({
+                "path": show_dir.display().to_string(),
+                "file": clip.display().to_string()
+            }),
+        );
+        assert_mutation_envelope(&first);
+        assert_eq!(first["ingested"], 1);
+        assert_eq!(first["takes"].as_array().unwrap().len(), 1);
+        let take_id = first["takes"][0]["id"].clone();
+        let rev = first["rev"].clone();
+        let second = call_body(
+            "lot_dailies_ingest",
+            json!({
+                "path": show_dir.display().to_string(),
+                "file": clip.display().to_string()
+            }),
+        );
+        assert_eq!(second["takes"].as_array().unwrap().len(), 1);
+        assert_eq!(second["takes"][0]["id"], take_id);
+        assert_eq!(second["rev"], rev);
+        assert_eq!(second["resumed"], 1);
+        assert_eq!(second["ingested"], 0);
     }
 }

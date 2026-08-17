@@ -755,6 +755,106 @@ mod tests {
     }
 
     #[test]
+    fn dailies_ingest_same_clip_is_idempotent() {
+        let _g = ENV.lock().unwrap_or_else(|e| e.into_inner());
+        let (dir, _) = setup_show("Idempotent");
+        let fixture = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("fixtures/carnival.txt");
+        crate::breakdown_parse(Some(&fixture)).unwrap();
+        let clip = dir.join("media").join("01-foo.mp4");
+        fs::create_dir_all(clip.parent().unwrap()).unwrap();
+        fs::write(&clip, b"fake-mp4-bytes-idempotent").unwrap();
+        crate::dailies_ingest(Some(&clip), None).unwrap();
+        let first = read_show(&dir).unwrap();
+        assert_eq!(first.takes.len(), 1);
+        let take_id = first.takes[0].id.clone();
+        let rev = first.rev;
+        crate::dailies_ingest(Some(&clip), None).unwrap();
+        let second = read_show(&dir).unwrap();
+        assert_eq!(
+            second.takes.len(),
+            1,
+            "same file must not mint a second take"
+        );
+        assert_eq!(second.takes[0].id, take_id);
+        assert_eq!(second.rev, rev, "resume must not bump rev");
+    }
+
+    #[test]
+    fn dailies_ingest_same_bytes_other_name_reuses_take() {
+        let _g = ENV.lock().unwrap_or_else(|e| e.into_inner());
+        let (dir, _) = setup_show("SameBytes");
+        let fixture = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("fixtures/carnival.txt");
+        crate::breakdown_parse(Some(&fixture)).unwrap();
+        let a = dir.join("media").join("01-foo.mp4");
+        let b = dir.join("media").join("01-bar.mp4");
+        fs::create_dir_all(a.parent().unwrap()).unwrap();
+        fs::write(&a, b"same-take-bytes").unwrap();
+        fs::write(&b, b"same-take-bytes").unwrap();
+        crate::dailies_ingest(Some(&a), None).unwrap();
+        let first = read_show(&dir).unwrap();
+        let rev = first.rev;
+        crate::dailies_ingest(Some(&b), None).unwrap();
+        let second = read_show(&dir).unwrap();
+        assert_eq!(second.takes.len(), 1, "same sha256 must not duplicate");
+        assert_eq!(second.takes[0].id, first.takes[0].id);
+        assert_eq!(second.rev, rev, "resume must not bump rev");
+    }
+
+    #[test]
+    fn dailies_ingest_resumes_partial_copy() {
+        let _g = ENV.lock().unwrap_or_else(|e| e.into_inner());
+        let (dir, _) = setup_show("ResumeCopy");
+        let fixture = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("fixtures/carnival.txt");
+        crate::breakdown_parse(Some(&fixture)).unwrap();
+        let roots = tmp();
+        fs::create_dir_all(&roots).unwrap();
+        let src = roots.join("01-foo.mp4");
+        fs::write(&src, b"owned-copy-bytes").unwrap();
+        std::env::set_var("LOT_MEDIA_ROOTS", &roots);
+        let dest = dir.join("media").join("01-foo.mp4");
+        let part = dir.join("media").join("01-foo.mp4.part");
+        fs::create_dir_all(dest.parent().unwrap()).unwrap();
+        fs::write(&part, b"partial").unwrap();
+        crate::dailies_ingest(Some(&src), None).unwrap();
+        let show = read_show(&dir).unwrap();
+        assert_eq!(show.takes.len(), 1);
+        assert!(dest.is_file(), "owned copy under media/");
+        assert!(!part.exists(), "leftover .part must be replaced");
+        assert_eq!(fs::read(&dest).unwrap(), b"owned-copy-bytes");
+        assert!(
+            show.takes[0].path.contains("media"),
+            "take path should be the owned copy: {}",
+            show.takes[0].path
+        );
+        let rev = show.rev;
+        crate::dailies_ingest(Some(&src), None).unwrap();
+        let again = read_show(&dir).unwrap();
+        assert_eq!(again.takes.len(), 1);
+        assert_eq!(again.rev, rev);
+    }
+
+    #[test]
+    fn dailies_circle_twice_is_idempotent() {
+        let _g = ENV.lock().unwrap_or_else(|e| e.into_inner());
+        let (dir, _) = setup_show("CircleOnce");
+        let fixture = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("fixtures/carnival.txt");
+        crate::breakdown_parse(Some(&fixture)).unwrap();
+        let clip = dir.join("media").join("01-foo.mp4");
+        fs::create_dir_all(clip.parent().unwrap()).unwrap();
+        fs::write(&clip, b"circle-bytes").unwrap();
+        crate::dailies_ingest(Some(&clip), None).unwrap();
+        let id = read_show(&dir).unwrap().takes[0].id.clone();
+        crate::dailies_circle(&id).unwrap();
+        let first = read_show(&dir).unwrap();
+        assert!(first.takes[0].circled);
+        let rev = first.rev;
+        crate::dailies_circle(&id).unwrap();
+        let second = read_show(&dir).unwrap();
+        assert!(second.takes[0].circled);
+        assert_eq!(second.rev, rev, "already circled must not bump rev");
+    }
+
+    #[test]
     fn advertisement_and_music_video_formats() {
         let _g = ENV.lock().unwrap_or_else(|e| e.into_inner());
         let (dir, _) = setup_show("Ad");
@@ -1153,7 +1253,10 @@ mod tests {
         let (dir, _) = setup_show("Lock");
         crate::agent::set_agent(Some("hermes".into()));
         crate::set_brief("hermes holds the show").unwrap();
-        assert_eq!(read_show(&dir).unwrap().locked_by.as_deref(), Some("hermes"));
+        assert_eq!(
+            read_show(&dir).unwrap().locked_by.as_deref(),
+            Some("hermes")
+        );
         crate::agent::set_agent(Some("cursor".into()));
         let err = crate::set_brief("cursor clobber").unwrap_err().to_string();
         assert!(err.contains("locked_by"), "{err}");
@@ -1198,7 +1301,10 @@ mod tests {
         assert!(!blob.contains("sk-secret-abc"), "{blob}");
         assert!(blob.contains("keep"), "{blob}");
         let st = crate::Status::bootstrap();
-        assert_eq!(st.last_event.as_ref().map(|e| e.who.as_str()), Some("hermes"));
+        assert_eq!(
+            st.last_event.as_ref().map(|e| e.who.as_str()),
+            Some("hermes")
+        );
         crate::agent::clear_agent();
     }
 
@@ -1243,7 +1349,10 @@ mod tests {
             "{blob}"
         );
         assert!(blob.to_lowercase().contains("export all shows"), "{blob}");
-        assert_eq!(current_show_path().unwrap().as_deref(), Some(here.as_path()));
+        assert_eq!(
+            current_show_path().unwrap().as_deref(),
+            Some(here.as_path())
+        );
         assert!(!here.join("dailies").exists());
     }
 
@@ -1285,8 +1394,16 @@ mod tests {
         assert!(!dry.ready);
         assert!(dry.dry_run);
         assert!(!dry.committed);
-        assert!(dry.missing.iter().any(|s| s.contains("no brief")), "{:?}", dry.missing);
-        assert!(dry.missing.iter().any(|s| s.contains("no draft")), "{:?}", dry.missing);
+        assert!(
+            dry.missing.iter().any(|s| s.contains("no brief")),
+            "{:?}",
+            dry.missing
+        );
+        assert!(
+            dry.missing.iter().any(|s| s.contains("no draft")),
+            "{:?}",
+            dry.missing
+        );
         assert_eq!(read_show(&dir).unwrap().phase, "writer");
         assert_eq!(read_show(&dir).unwrap().rev, rev);
         let err = crate::handoff(true).unwrap_err().to_string();

@@ -41,7 +41,7 @@ pub use brain::{
 pub use breakdown::{breakdown_parse, breakdown_summary, picture_lock, wall_add};
 pub use budget::{set_budget, Budget};
 pub use caps::{active as active_caps, clear_caps, parse_caps, set_caps, with_caps, Cap, Caps};
-pub use dailies::{dailies_circle, dailies_export, dailies_ingest};
+pub use dailies::{dailies_circle, dailies_export, dailies_ingest, IngestReport};
 pub use detail::{
     clear_detail, detail_full, detail_full_active, detail_full_value, lean_extra, set_detail_full,
     with_detail,

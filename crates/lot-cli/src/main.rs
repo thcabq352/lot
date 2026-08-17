@@ -1142,17 +1142,22 @@ fn breakdown_cmd(cmd: BreakdownCmd, json: bool) -> ExitCode {
 fn dailies_cmd(cmd: DailiesCmd, json: bool) -> ExitCode {
     match cmd {
         DailiesCmd::Ingest { file, dir } => match dailies_ingest(file.as_deref(), dir.as_deref()) {
-            Ok((show_dir, show)) => ok_writer(
+            Ok((show_dir, show, report)) => ok_writer(
                 json,
                 &show_dir,
                 &show,
                 serde_json::json!({
+                    "ingested": report.ingested,
+                    "resumed": report.resumed,
                     "takes": show.takes,
                     "shots": show.shots.iter().map(|s| {
                         serde_json::json!({ "num": s.num, "name": s.name })
                     }).collect::<Vec<_>>()
                 }),
-                &format!("ingested {} takes", show.takes.len()),
+                &format!(
+                    "ingested {} takes (resumed {})",
+                    report.ingested, report.resumed
+                ),
             ),
             Err(e) => fail(json, &e.to_string()),
         },

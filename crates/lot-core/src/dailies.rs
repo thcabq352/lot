@@ -1,17 +1,23 @@
 use crate::model::{filename_shot_prefix, shot_nums_match, MediaItem, Take};
 use crate::show::{
-    append_event, append_event_with, bump, require_write_current, write_show, Show,
-    ShowError,
+    append_event, append_event_with, bump, require_write_current, write_show, Show, ShowError,
 };
 use sha2::{Digest, Sha256};
 use std::fs;
+use std::io::Read;
 use std::path::{Path, PathBuf};
 use std::process::Command;
+
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
+pub struct IngestReport {
+    pub ingested: u32,
+    pub resumed: u32,
+}
 
 pub fn dailies_ingest(
     file: Option<&Path>,
     dir: Option<&Path>,
-) -> Result<(PathBuf, Show), ShowError> {
+) -> Result<(PathBuf, Show, IngestReport), ShowError> {
     let (show_dir, mut show) = require_write_current()?;
     let mut files: Vec<PathBuf> = Vec::new();
     if let Some(f) = file {
@@ -29,16 +35,21 @@ pub fn dailies_ingest(
             "dailies ingest needs --file or --dir (or media/ with clips)".into(),
         ));
     }
-    let mut ingested = 0u32;
+    let mut report = IngestReport::default();
     for f in files {
         if ingest_one(&show_dir, &mut show, &f)? {
-            ingested += 1;
+            report.ingested += 1;
+        } else {
+            report.resumed += 1;
         }
     }
-    if ingested == 0 && show.takes.is_empty() {
+    if report.ingested == 0 && show.takes.is_empty() {
         return Err(ShowError::Msg(
             "no clips bound — filename must start with a shot number (01-foo.mp4)".into(),
         ));
+    }
+    if report.ingested == 0 {
+        return Ok((show_dir, show, report));
     }
     show.phase = "dailies".into();
     bump(&mut show);
@@ -47,9 +58,13 @@ pub fn dailies_ingest(
         &show_dir,
         "dailies.ingest",
         &show,
-        Some(serde_json::json!({ "ingested": ingested, "takes": show.takes.len() })),
+        Some(serde_json::json!({
+            "ingested": report.ingested,
+            "resumed": report.resumed,
+            "takes": show.takes.len()
+        })),
     )?;
-    Ok((show_dir, show))
+    Ok((show_dir, show, report))
 }
 
 fn collect_media(dir: &Path, out: &mut Vec<PathBuf>) -> Result<(), ShowError> {
@@ -94,39 +109,107 @@ fn ingest_one(show_dir: &Path, show: &mut Show, file: &Path) -> Result<bool, Sho
         .ok_or_else(|| ShowError::Msg(format!("no shot matching {prefix} (from {filename})")))?
         .clone();
     let shot_name_before = shot.name.clone();
-    let bytes = fs::read(file)?;
-    let sha = hex_sha256(&bytes);
+    let sha = file_sha256(file)?;
+    if show
+        .takes
+        .iter()
+        .any(|t| !t.sha256.is_empty() && t.sha256 == sha)
+    {
+        return Ok(false);
+    }
+    let dest = show_dir.join("media").join(&filename);
+    own_copy(file, &dest, &sha)?;
+    let path_s = std::path::absolute(&dest)
+        .unwrap_or_else(|_| dest.to_path_buf())
+        .display()
+        .to_string();
     if show.takes.iter().any(|t| {
-        t.sha256 == sha || (t.path == file.display().to_string() && t.filename == filename)
+        t.filename == filename
+            && (t.sha256.is_empty() || t.sha256 == sha || paths_match(&t.path, &path_s))
     }) {
         return Ok(false);
     }
-    let duration = probe_duration(file);
+    let duration = probe_duration(&dest).or_else(|| probe_duration(file));
     let id = format!("tk-{}", show.takes.len() + 1);
     show.takes.push(Take {
         id,
         shot_id: shot.id.clone(),
-        path: std::path::absolute(file)
-            .unwrap_or_else(|_| file.to_path_buf())
-            .display()
-            .to_string(),
+        path: path_s.clone(),
         filename,
         sha256: sha.clone(),
         duration_secs: duration,
         circled: false,
     });
-    show.media.push(MediaItem {
-        path: file.display().to_string(),
-        sha256: sha,
-        kind: "video".into(),
-        duration_secs: duration,
-    });
+    if !show.media.iter().any(|m| m.sha256 == sha) {
+        show.media.push(MediaItem {
+            path: path_s,
+            sha256: sha,
+            kind: "video".into(),
+            duration_secs: duration,
+        });
+    }
     // AC-003: do not rename the shot to "01".
     if let Some(s) = show.shots.iter_mut().find(|s| s.id == shot.id) {
         debug_assert_eq!(s.name, shot_name_before);
-        let _ = show_dir;
     }
     Ok(true)
+}
+
+fn own_copy(src: &Path, dest: &Path, sha: &str) -> Result<(), ShowError> {
+    if let Some(parent) = dest.parent() {
+        fs::create_dir_all(parent)?;
+    }
+    let part = dest.with_file_name(format!(
+        "{}.part",
+        dest.file_name()
+            .and_then(|s| s.to_str())
+            .unwrap_or("clip.part")
+    ));
+    if dest.is_file() && paths_match(&src.display().to_string(), &dest.display().to_string()) {
+        let _ = fs::remove_file(&part);
+        return Ok(());
+    }
+    if dest.is_file() {
+        let dest_sha = file_sha256(dest)?;
+        if dest_sha != sha {
+            return Err(ShowError::Msg(format!(
+                "media/{} already exists with a different hash",
+                dest.file_name().and_then(|s| s.to_str()).unwrap_or("clip")
+            )));
+        }
+        let _ = fs::remove_file(&part);
+        return Ok(());
+    }
+    let _ = fs::remove_file(&part);
+    if !paths_match(&src.display().to_string(), &dest.display().to_string()) {
+        fs::copy(src, &part)?;
+        fs::rename(&part, dest)?;
+    }
+    Ok(())
+}
+
+fn paths_match(a: &str, b: &str) -> bool {
+    let pa = Path::new(a);
+    let pb = Path::new(b);
+    let ca = std::fs::canonicalize(pa)
+        .unwrap_or_else(|_| std::path::absolute(pa).unwrap_or_else(|_| pa.to_path_buf()));
+    let cb = std::fs::canonicalize(pb)
+        .unwrap_or_else(|_| std::path::absolute(pb).unwrap_or_else(|_| pb.to_path_buf()));
+    ca == cb
+}
+
+fn file_sha256(path: &Path) -> Result<String, ShowError> {
+    let mut f = fs::File::open(path)?;
+    let mut h = Sha256::new();
+    let mut buf = [0u8; 65_536];
+    loop {
+        let n = f.read(&mut buf)?;
+        if n == 0 {
+            break;
+        }
+        h.update(&buf[..n]);
+    }
+    Ok(h.finalize().iter().map(|b| format!("{b:02x}")).collect())
 }
 
 pub fn dailies_circle(take_id: &str) -> Result<(PathBuf, Show), ShowError> {
@@ -137,6 +220,15 @@ pub fn dailies_circle(take_id: &str) -> Result<(PathBuf, Show), ShowError> {
         ));
     }
     let (dir, mut show) = require_write_current()?;
+    let already = show
+        .takes
+        .iter()
+        .find(|t| t.id == take_id || t.filename == take_id)
+        .ok_or_else(|| ShowError::Msg(format!("unknown take: {take_id}")))?
+        .circled;
+    if already {
+        return Ok((dir, show));
+    }
     let take = show
         .takes
         .iter_mut()
@@ -221,12 +313,6 @@ fn xml_esc(s: &str) -> String {
         .replace('<', "&lt;")
         .replace('>', "&gt;")
         .replace('"', "&quot;")
-}
-
-fn hex_sha256(bytes: &[u8]) -> String {
-    let mut h = Sha256::new();
-    h.update(bytes);
-    h.finalize().iter().map(|b| format!("{b:02x}")).collect()
 }
 
 fn probe_duration(file: &Path) -> Option<f64> {
