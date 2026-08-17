@@ -66,6 +66,7 @@ Lock blocks brief, style, cast, draft, revise (error contains `locked`). Empty b
 5. Secrets never in `show.lot` or this repo.
 6. Do not port Wasserman Electron apps here unless replacing an adapter.
 7. No LangGraph. Hermes is the filmmaker loop; Cursor builds Lot.
+8. **William bar** (canon): `docs/plan-agent-first-film-lot.md`. When a human UI exists it must be a film tool he can be proud of — one show, calm, cinematic, School as a dimmer. No gray form farm. No segregated “special” skin. Do not start Tauri until the current kernel phase is done.
 
 ## Do not
 
