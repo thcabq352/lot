@@ -29,6 +29,8 @@ Home: `C:\Users\thcab\lot` — **not** `video-buddy-suite`.
 
 Do not start Tauri or installers from this skill. Do not port Wasserman Electron.
 
+Humans may open `lot-ui` (`cargo run -p lot-ui`). Filmmaker agents still use `lot mcp`.
+
 ## Door
 
 ```
@@ -106,4 +108,4 @@ Pass `cap` / `--cap` / `LOT_CAP`. Unset = all. `read` cannot circle or generate 
 
 ## William bar
 
-When a human UI exists it must pass the William bar in `docs/plan-agent-first-film-lot.md`. Do not start Tauri from this skill.
+When a human UI exists it must pass the William bar in `docs/plan-agent-first-film-lot.md`. Humans may open `lot-ui`. Filmmaker agents still use `lot mcp`. Do not start Tauri from this skill.

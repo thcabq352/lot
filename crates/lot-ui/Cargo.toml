@@ -1,0 +1,23 @@
+[package]
+name = "lot-ui"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+description = "lot-ui — human film-bay window. Same lot-core as the CLI."
+
+[lib]
+name = "lot_ui"
+path = "src/lib.rs"
+
+[[bin]]
+name = "lot-ui"
+path = "src/main.rs"
+
+[build-dependencies]
+tauri-build = { version = "2", features = [] }
+
+[dependencies]
+lot-core = { workspace = true }
+serde = { workspace = true }
+serde_json = { workspace = true }
+tauri = { version = "2", features = [] }

@@ -1,6 +1,6 @@
 [workspace]
 resolver = "2"
-members = ["crates/lot-core", "crates/lot-cli", "crates/lot-mcp"]
+members = ["crates/lot-core", "crates/lot-cli", "crates/lot-mcp", "crates/lot-ui"]
 
 [workspace.package]
 version = "0.1.0"

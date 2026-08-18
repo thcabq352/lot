@@ -6,7 +6,7 @@ pub fn help_spec() -> Value {
     json!({
         "name": crate::NAME,
         "version": crate::VERSION,
-        "door": ["cli", "mcp", "http"],
+        "door": ["cli", "mcp", "http", "ui"],
         "school_default": "off",
         "telemetry_default": "off",
         "notice": "Flags only. No TTY prompts. Exit 0 = ok. Do not click folder dialogs. --agent / LOT_AGENT / MCP agent: who writes (unset = human, no auto-claim). --cap / LOT_CAP / MCP cap: read|write|render|export|spend (unset = all). --detail full / MCP detail=full dumps shot prompts and cards; default --json is lean (ids, counts, media path+sha256+duration). Jail = this show.lot + LOT_MEDIA_ROOTS; fountain is scene text (AC-013). Show budget: lot budget --spend/--render (hit cap → stop). MCP notifications/cancelled stops stills generate, finish, and draft (cancelled —; no fake PNG/wav/fountain). lot status --json includes dirty, missing, missing_media.",
@@ -74,7 +74,8 @@ pub fn help_spec() -> Value {
             verb("lot school score --fixture|--scene", "lot_school_score", "school", "Rubric ids + pass/fail. Gold fixtures: no-want, axis-fail. No GPU."),
             verb("lot school exam [--fixture]", "lot_school_exam", "school", "Grade craft+theory. Never blocks export. CLI exit 1 if the exam fails."),
             verb("lot mcp", "", "kernel", "NDJSON JSON-RPC 2.0 on stdin/stdout. Native agent door."),
-            verb("lot serve [--bind]", "", "kernel", "Optional HTTP/OpenAPI twin. Same tool names as MCP. Default 127.0.0.1:8787. Not required — lot mcp is the agent door.")
+            verb("lot serve [--bind]", "", "kernel", "Optional HTTP/OpenAPI twin. Same tool names as MCP. Default 127.0.0.1:8787. Not required — lot mcp is the agent door."),
+            verb("lot-ui", "", "kernel", "Human film-bay window. Same lot-core as the CLI. Agents still use lot mcp. No folder dialog.")
         ]
     })
 }
@@ -140,6 +141,7 @@ mod tests {
             doors.contains(&"http"),
             "door must list http twin {doors:?}"
         );
+        assert!(doors.contains(&"ui"), "door must list ui {doors:?}");
         let clis: Vec<&str> = v["verbs"]
             .as_array()
             .unwrap()
@@ -149,6 +151,10 @@ mod tests {
         assert!(
             clis.iter().any(|c| c.starts_with("lot serve")),
             "missing lot serve in {clis:?}"
+        );
+        assert!(
+            clis.iter().any(|c| *c == "lot-ui"),
+            "missing lot-ui in {clis:?}"
         );
         assert!(
             v["notice"].as_str().unwrap().contains("detail=full"),

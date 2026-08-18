@@ -1,0 +1,51 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Lot</title>
+    <link rel="stylesheet" href="./app.css" />
+  </head>
+  <body>
+    <div id="stage">
+      <p id="notice" hidden></p>
+
+      <section id="empty">
+        <p class="kicker">Lot</p>
+        <h1>Open a show.</h1>
+        <p class="lede">Type a path. Same as <code>lot create</code> / <code>lot open</code>.</p>
+        <form id="gate" autocomplete="off">
+          <label>
+            Path
+            <input id="path" name="path" type="text" spellcheck="false" placeholder="path to the show" />
+          </label>
+          <label>
+            Name
+            <input id="name" name="name" type="text" spellcheck="false" placeholder="title" />
+          </label>
+          <div class="actions">
+            <button type="submit" data-act="create">Create</button>
+            <button type="button" data-act="open">Open</button>
+          </div>
+        </form>
+      </section>
+
+      <section id="bay" hidden>
+        <p class="kicker">Lot</p>
+        <h1 id="show-name"></h1>
+        <p id="show-meta"></p>
+        <ol id="rail"></ol>
+        <p id="event" hidden></p>
+      </section>
+
+      <aside id="school" data-on="false">
+        <label class="dimmer">
+          <span>School</span>
+          <input id="school-on" type="checkbox" />
+        </label>
+        <div id="school-extra" hidden></div>
+      </aside>
+    </div>
+    <script src="./app.js"></script>
+  </body>
+</html>

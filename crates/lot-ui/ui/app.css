@@ -1,0 +1,320 @@
+:root {
+  --void: #070605;
+  --bay: #100e0c;
+  --paper: #efe6d8;
+  --fog: #8a8278;
+  --tungsten: #d4a36a;
+  --line: rgba(239, 230, 216, 0.14);
+  --danger: #c45c4a;
+  --serif: "Iowan Old Style", "Palatino Linotype", Palatino, "Times New Roman", serif;
+  --sans: "Segoe UI", system-ui, sans-serif;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+html,
+body {
+  margin: 0;
+  min-height: 100%;
+  background: var(--void);
+  color: var(--paper);
+  font-family: var(--sans);
+}
+
+body {
+  min-height: 100vh;
+  background:
+    radial-gradient(ellipse 70% 50% at 50% 38%, rgba(212, 163, 106, 0.08), transparent 62%),
+    radial-gradient(ellipse 100% 80% at 50% 100%, #100e0c, var(--void));
+}
+
+#stage {
+  position: relative;
+  min-height: 100vh;
+  padding: 12vh 8vw 10vh;
+}
+
+.kicker {
+  margin: 0 0 1.2rem;
+  font-size: 0.72rem;
+  letter-spacing: 0.42em;
+  text-transform: uppercase;
+  color: var(--tungsten);
+}
+
+h1 {
+  margin: 0 0 0.6rem;
+  font-family: var(--serif);
+  font-size: clamp(2.4rem, 6vw, 4.4rem);
+  font-weight: 500;
+  letter-spacing: -0.03em;
+  line-height: 1.05;
+}
+
+.lede {
+  margin: 0 0 2.4rem;
+  max-width: 28rem;
+  color: var(--fog);
+  font-size: 1.05rem;
+  line-height: 1.5;
+}
+
+code {
+  font-family: ui-monospace, "Cascadia Mono", Consolas, monospace;
+  font-size: 0.88em;
+  color: var(--paper);
+}
+
+#gate {
+  display: grid;
+  gap: 1.15rem;
+  max-width: 28rem;
+}
+
+#gate label {
+  display: grid;
+  gap: 0.4rem;
+  font-size: 0.72rem;
+  letter-spacing: 0.16em;
+  text-transform: uppercase;
+  color: var(--fog);
+}
+
+#gate input {
+  width: 100%;
+  padding: 0.7rem 0;
+  border: 0;
+  border-bottom: 1px solid var(--line);
+  background: transparent;
+  color: var(--paper);
+  font-family: var(--serif);
+  font-size: 1.25rem;
+  outline: none;
+}
+
+#gate input:focus {
+  border-bottom-color: var(--tungsten);
+}
+
+.actions {
+  display: flex;
+  gap: 1.6rem;
+  margin-top: 0.6rem;
+}
+
+button {
+  padding: 0;
+  border: 0;
+  background: none;
+  color: var(--paper);
+  font-family: var(--sans);
+  font-size: 0.82rem;
+  letter-spacing: 0.2em;
+  text-transform: uppercase;
+  cursor: pointer;
+}
+
+button:hover,
+button:focus-visible {
+  color: var(--tungsten);
+  outline: none;
+}
+
+#show-meta {
+  margin: 0 0 3.2rem;
+  color: var(--fog);
+  font-size: 0.95rem;
+  letter-spacing: 0.04em;
+}
+
+#rail {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.85rem 1.1rem;
+  margin: 0 0 3.2rem;
+  padding: 0;
+  list-style: none;
+  max-width: 52rem;
+}
+
+#rail li {
+  position: relative;
+  color: #4e4944;
+  font-size: 0.72rem;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+}
+
+#rail li.dirty .tick {
+  position: absolute;
+  top: -0.55rem;
+  left: 50%;
+  width: 0.28rem;
+  height: 0.28rem;
+  border-radius: 50%;
+  background: var(--tungsten);
+  transform: translateX(-50%);
+  opacity: 0.7;
+}
+
+#rail li.lit {
+  color: var(--paper);
+}
+
+#rail li.lit::after {
+  content: "";
+  display: block;
+  width: 100%;
+  height: 1px;
+  margin-top: 0.35rem;
+  background: var(--tungsten);
+}
+
+#event {
+  margin: 0;
+  color: var(--fog);
+  font-family: var(--serif);
+  font-size: 1.15rem;
+}
+
+#event strong {
+  color: var(--paper);
+  font-weight: 500;
+}
+
+#school {
+  position: absolute;
+  top: 7vh;
+  right: 6vw;
+  display: grid;
+  gap: 0.8rem;
+  justify-items: end;
+  min-width: 8rem;
+}
+
+.dimmer {
+  display: flex;
+  align-items: center;
+  gap: 0.7rem;
+  font-size: 0.7rem;
+  letter-spacing: 0.22em;
+  text-transform: uppercase;
+  color: var(--fog);
+  cursor: pointer;
+}
+
+.dimmer input {
+  appearance: none;
+  width: 2.4rem;
+  height: 0.7rem;
+  margin: 0;
+  border: 1px solid var(--line);
+  border-radius: 99px;
+  background: #1a1714;
+  cursor: pointer;
+}
+
+.dimmer input::after {
+  content: "";
+  display: block;
+  width: 0.55rem;
+  height: 0.55rem;
+  margin: 0.05rem;
+  border-radius: 50%;
+  background: var(--fog);
+  transition: transform 0.2s ease, background 0.2s ease;
+}
+
+.dimmer input:checked {
+  border-color: var(--tungsten);
+}
+
+.dimmer input:checked::after {
+  background: var(--tungsten);
+  transform: translateX(1.55rem);
+}
+
+#school[data-on="true"] .dimmer {
+  color: var(--tungsten);
+}
+
+#school-extra {
+  display: grid;
+  gap: 0.45rem;
+  justify-items: end;
+}
+
+#school-extra[hidden] {
+  display: none;
+}
+
+#school-extra label {
+  display: grid;
+  gap: 0.2rem;
+  font-size: 0.65rem;
+  letter-spacing: 0.16em;
+  text-transform: uppercase;
+  color: var(--fog);
+  text-align: right;
+}
+
+#school-extra select {
+  border: 0;
+  border-bottom: 1px solid var(--line);
+  background: transparent;
+  color: var(--paper);
+  font-family: var(--serif);
+  font-size: 0.95rem;
+  text-align: right;
+  outline: none;
+}
+
+#notice {
+  margin: 0 0 1.5rem;
+  color: var(--danger);
+  font-size: 0.95rem;
+}
+
+#notice[hidden] {
+  display: none;
+}
+
+#bay.rise {
+  animation: rise 0.45s ease;
+}
+
+@keyframes rise {
+  from {
+    opacity: 0;
+    transform: translateY(10px);
+  }
+  to {
+    opacity: 1;
+    transform: none;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  #bay.rise,
+  .dimmer input::after {
+    animation: none;
+    transition: none;
+  }
+}
+
+@media (max-width: 820px) {
+  #school {
+    position: static;
+    justify-items: start;
+    margin-bottom: 2rem;
+  }
+
+  #school-extra,
+  #school-extra label,
+  #school-extra select {
+    justify-items: start;
+    text-align: left;
+  }
+}

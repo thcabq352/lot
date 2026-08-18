@@ -57,6 +57,8 @@ Hermes:
 
 Skill: `skills/film-lot/SKILL.md`.
 
+Humans may open the film-bay window: `cargo run -p lot-ui`. Agents still use `lot mcp`. No folder dialog. Do not start Phase 6 installers.
+
 No TTY prompts. Flags only. Exit 0 = ok. A show is a directory with `show.json` + `events.jsonl` + `media/`.
 
 ## Writer
@@ -250,6 +252,7 @@ Tutor rides on mutating `--json` / MCP payloads (no extra brain call). Off or `-
 - `crates/lot-core` — schema, Writer, Breakdown, Stage, Dailies, Stems, Stills, Slate, Motion, Finish, snapshot, show lock, jail, budget, audit, handoff, resources, import, doctor, plugins, school exam + tutor, telemetry, Ollama brain
 - `crates/lot-cli` — binary `lot`
 - `crates/lot-mcp` — stdio MCP (`lot mcp`)
+- `crates/lot-ui` — human film-bay window (Tauri v2). Same lot-core as the CLI. Agents still use `lot mcp`.
 
 ## Rules
 
@@ -260,11 +263,11 @@ Tutor rides on mutating `--json` / MCP payloads (no extra brain call). Off or `-
 5. Secrets never in `show.lot` or this repo.
 6. Do not port Wasserman Electron apps here unless replacing an adapter.
 7. No LangGraph. Hermes is the filmmaker loop; Cursor builds Lot.
-8. **William bar** (canon): `docs/plan-agent-first-film-lot.md`. When a human UI exists it must be a film tool he can be proud of — one show, calm, cinematic, School as a dimmer. No gray form farm. No segregated “special” skin. Do not start Tauri until the current kernel phase is done.
+8. **William bar** (canon): `docs/plan-agent-first-film-lot.md`. The human window is `lot-ui`. One show, calm, cinematic, School as a dimmer. No gray form farm. No segregated “special” skin. Agents use `lot mcp`. Do not start Phase 6 installers.
 
 ## Do not
 
 - Commit a real show
 - Put API keys in chat or files
 - Require Comfy/Resolve/GPU for `lot status`
-- Start Phase 4 Tauri or Phase 6 installers in the same sprint as kernel work
+- Start Phase 6 installers

@@ -1,0 +1,6 @@
+{
+  "identifier": "default",
+  "description": "Lot film-bay window. Path strings only; no folder dialog.",
+  "windows": ["main"],
+  "permissions": ["core:default"]
+}
