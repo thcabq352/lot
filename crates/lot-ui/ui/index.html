@@ -112,8 +112,16 @@
             <button type="button" data-writer="lock">Lock</button>
             <button type="button" data-writer="unlock">Unlock</button>
           </div>
-          <p id="theory" hidden></p>
         </section>
+
+        <section id="card" hidden>
+          <p class="kicker" id="card-kicker"></p>
+          <p id="card-lede"></p>
+          <ul id="card-rows"></ul>
+          <form id="card-confirm" hidden autocomplete="off"></form>
+          <p id="card-gate" class="quiet" hidden></p>
+        </section>
+        <p id="theory" hidden></p>
       </section>
 
       <aside id="school" data-on="false">

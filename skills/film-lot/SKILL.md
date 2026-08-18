@@ -1,7 +1,7 @@
 ---
 name: film-lot
 description: "Use when Lot, lot mcp, or show.lot. Filmmaker loop on lot mcp. Lot code goes to coder."
-version: 1.2.1
+version: 1.2.3
 license: MIT
 platforms: [windows, macos, linux]
 metadata:
@@ -29,7 +29,7 @@ Home: `C:\Users\thcab\lot` — **not** `video-buddy-suite`.
 
 Do not start Tauri or installers from this skill. Do not port Wasserman Electron.
 
-Humans may open `lot-ui` (`cargo run -p lot-ui`) and confirm Writer (brief / style / cast / draft / revise) in that window. Filmmaker agents still use `lot mcp`.
+Humans may open `lot-ui` (`cargo run -p lot-ui`) to confirm Writer and view later sections (breakdown → cut) in that window. Thin confirm: breakdown parse, wall add/update/remove, picture lock/unlock/ref, handoff. Filmmaker agents still use `lot mcp`.
 
 ## Door
 
@@ -64,7 +64,7 @@ If `doctor.stills_comfy_workflow` is false, Comfy stills will fail honestly — 
 
 1. **Writer** — brief, style, cast, draft, revise, lock. Formats: feature | 30min | 15s | episodic | advertisement | music-video (`ad`, `mv`). Empty brief → `no brief`. No brain → `no brain —` and never a fake fountain.
 2. **Breakdown** — import/parse (ScriptBreak-equivalent, including `NAME (quietly)` → character). Import does not delete the source.
-3. **Wall / Picture** — beats, lock shot cards. Does not rename the shot.
+3. **Wall / Picture** — beat cards (`wall add` / `update` / `remove` / `reorder`), lock/unlock shot cards, jailed `--file` ref. Empty beat → `no beat —`. Does not rename the shot. No fake PNG.
 4. **Stage** — 2D floor marks + camera card. `stage export` → `stage/block.json`. 3D stays in Blockout. Never invent glTF.
 5. **Stills / Board** — `stills generate --backend grok|comfy` (no silent swap), `stills describe` (Grok vision or Ollama VL; no invented look), then `board export`. Generates record seed, prompt hash, duration, VRAM cap so a take can be reshot. MCP `notifications/cancelled` stops stills generate / finish / draft (`cancelled —`; no fake PNG, wav, or fountain).
 6. **Motion** — plate + marks (`camera_only` | `actor_motion` | `object_motion` | `full_scene`). Export `motion/previs.json`. Pose/depth stay in Motion Previs Studio. Never invent OpenPose.

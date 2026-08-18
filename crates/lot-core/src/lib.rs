@@ -47,7 +47,10 @@ pub use brain::{
     complete_chat, complete_vision, draft_fountain, draft_user_prompt, hash_prompt, probe_ollama,
     revise_fountain, Completion, OllamaProbe, Provenance,
 };
-pub use breakdown::{breakdown_parse, breakdown_summary, picture_lock, wall_add};
+pub use breakdown::{
+    breakdown_parse, breakdown_summary, picture_lock, picture_ref, picture_summary, picture_unlock,
+    wall_add, wall_remove, wall_reorder, wall_summary, wall_update,
+};
 pub use budget::{set_budget, Budget};
 pub use cancel::{
     begin_request, check as check_cancel, clear as clear_cancel, end_request, from_notification,

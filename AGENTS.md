@@ -40,7 +40,7 @@ Show budget: `lot budget --spend N --render N` (or `--clear-spend` / `--clear-re
 - `lot_show`, `lot_scene`, `lot_shot`, `lot_take`, `lot_import`
 - `lot_writer_brief`, `lot_writer_style`, `lot_writer_cast`, `lot_writer_draft`, `lot_writer_revise`, `lot_writer_lock`, `lot_writer_unlock`
 - `lot_breakdown_import`, `lot_breakdown_parse`
-- `lot_wall_add`, `lot_picture_lock`, `lot_stage_place`, `lot_stage_camera`, `lot_stage_export`
+- `lot_wall_add`, `lot_wall_update`, `lot_wall_remove`, `lot_wall_reorder`, `lot_wall_status`, `lot_picture_lock`, `lot_picture_unlock`, `lot_picture_ref`, `lot_picture_status`, `lot_stage_place`, `lot_stage_camera`, `lot_stage_export`
 - `lot_stills_generate`, `lot_stills_describe`, `lot_board_export`
 - `lot_slate_set`, `lot_slate_compile`, `lot_slate_target`, `lot_slate_lora`
 - `lot_motion_plate`, `lot_motion_marks`, `lot_motion_export`, `lot_motion_analyze`
@@ -57,7 +57,7 @@ Hermes:
 
 Skill: `skills/film-lot/SKILL.md`.
 
-Humans may open the film-bay window: `cargo run -p lot-ui`. Same window confirms Writer (brief / style / cast / draft / revise). Agents still use `lot mcp`. No folder dialog. Do not start Phase 6 installers.
+Humans may open the film-bay window: `cargo run -p lot-ui`. Same window confirms Writer and shows section viewers (breakdown → cut) for what the agent already wrote. Thin confirm: breakdown parse, wall add/update/remove, picture lock/unlock/ref, handoff. Agents still use `lot mcp`. No folder dialog. Do not start Phase 6 installers.
 
 No TTY prompts. Flags only. Exit 0 = ok. A show is a directory with `show.json` + `events.jsonl` + `media/`.
 
@@ -84,6 +84,29 @@ lot breakdown status --json
 ```
 
 Parser is ScriptBreak-equivalent (sluglines, `NAME (quietly)` → character ADA). Import does not delete the source `.txt` / `.scriptbreak`.
+
+## Wall (Cork Board)
+
+```
+lot wall add --text "Ada waits by the trunk." --act i --json
+lot wall update --id beat-1 --text "Ada waits in the rain." --json
+lot wall remove --id beat-2 --json
+lot wall reorder --id beat-2 --before beat-1 --json
+lot wall status --json
+```
+
+Empty text → `no beat —`. Never invents beats. Events: `wall.add` / `wall.update` / `wall.remove` / `wall.reorder`.
+
+## Picture (Master Canvas)
+
+```
+lot picture lock --shot 01 --json
+lot picture unlock --shot 01 --json
+lot picture ref --shot 01 --file tent.png --json
+lot picture status --json
+```
+
+Does not rename the shot. `--file` is jailed (this show or `LOT_MEDIA_ROOTS`). Copies into `picture/` and does not delete the source. Missing file → `not a file`. No fake PNG. Optional `--note` / `--size` write the existing shot `desc` / `size`. Events: `picture.lock` / `picture.unlock` / `picture.ref`.
 
 ## Stage (2D marks)
 
@@ -118,7 +141,7 @@ lot budget --spend 4 --render 8 --json
 
 Second agent → `locked_by: {holder} — did not write`. Writer lock (`lot writer lock`) is the draft contract; show lock is who may write the show at all.
 
-Import / ingest / plate / stems attach / finish `--file` / stills describe `--file` stay in this show (or `LOT_MEDIA_ROOTS`). A path inside another directory that has `show.json` is jailed.
+Import / ingest / plate / picture ref / stems attach / finish `--file` / stills describe `--file` stay in this show (or `LOT_MEDIA_ROOTS`). A path inside another directory that has `show.json` is jailed.
 
 ## Audit
 

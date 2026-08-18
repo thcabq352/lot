@@ -3,12 +3,13 @@ use lot_core::{
     board_export, breakdown_parse, breakdown_summary, create_show, dailies_circle, dailies_export,
     dailies_ingest, draft_screenplay, export_log, finish_pickup, handoff, help_plain, help_spec,
     import_file, lock_show, lock_writer, motion_analyze, motion_export, motion_marks, motion_plate,
-    mutation_json, open_show, picture_lock, plugin_call, plugin_list, replace_cast_json,
-    resource_read, restore_show, revise_screenplay, school_exam, school_get, school_score,
-    school_set, set_brief, set_budget, set_style, show_log, slate_compile, slate_lora, slate_set,
-    slate_target, snapshot_list, snapshot_show, stage_camera, stage_export, stage_place,
-    stems_soundtrack, stems_vo, stills_describe, stills_generate, telemetry_get, telemetry_set,
-    undo_show, unlock_show, unlock_writer, upgrade_check, upsert_cast, version_info, wall_add,
+    mutation_json, open_show, picture_lock, picture_ref, picture_summary, picture_unlock,
+    plugin_call, plugin_list, replace_cast_json, resource_read, restore_show, revise_screenplay,
+    school_exam, school_get, school_score, school_set, set_brief, set_budget, set_style, show_log,
+    slate_compile, slate_lora, slate_set, slate_target, snapshot_list, snapshot_show, stage_camera,
+    stage_export, stage_place, stems_soundtrack, stems_vo, stills_describe, stills_generate,
+    telemetry_get, telemetry_set, undo_show, unlock_show, unlock_writer, upgrade_check,
+    upsert_cast, version_info, wall_add, wall_remove, wall_reorder, wall_summary, wall_update,
     Doctor, Status,
 };
 use std::path::{Path, PathBuf};
@@ -91,7 +92,7 @@ enum Cmd {
         #[command(subcommand)]
         cmd: WallCmd,
     },
-    /// Picture (Master Canvas): lock a shot card.
+    /// Picture (Master Canvas): lock a shot card, unlock, or attach a ref.
     Picture {
         #[command(subcommand)]
         cmd: PictureCmd,
@@ -340,6 +341,29 @@ enum WallCmd {
         #[arg(long)]
         act: Option<String>,
     },
+    Update {
+        #[arg(long)]
+        id: String,
+        #[arg(long)]
+        text: Option<String>,
+        #[arg(long)]
+        act: Option<String>,
+    },
+    Remove {
+        #[arg(long)]
+        id: String,
+    },
+    Reorder {
+        #[arg(long)]
+        id: String,
+        #[arg(long)]
+        before: Option<String>,
+        #[arg(long)]
+        after: Option<String>,
+        #[arg(long)]
+        index: Option<usize>,
+    },
+    Status,
 }
 
 #[derive(Subcommand)]
@@ -352,6 +376,17 @@ enum PictureCmd {
         #[arg(long)]
         shot: String,
     },
+    Ref {
+        #[arg(long)]
+        shot: String,
+        #[arg(long)]
+        file: PathBuf,
+        #[arg(long)]
+        note: Option<String>,
+        #[arg(long)]
+        size: Option<String>,
+    },
+    Status,
 }
 
 #[derive(Subcommand)]
@@ -634,8 +669,55 @@ fn main() -> ExitCode {
                         cli.json,
                         &dir,
                         &show,
-                        serde_json::json!({ "wall": show.wall }),
+                        wall_summary(&show),
                         &format!("wall beat added ({})", dir.display()),
+                    ),
+                    Err(e) => fail(cli.json, &e.to_string()),
+                },
+                WallCmd::Update { id, text, act } => {
+                    match wall_update(&id, text.as_deref(), act.as_deref()) {
+                        Ok((dir, show)) => ok_writer(
+                            cli.json,
+                            &dir,
+                            &show,
+                            wall_summary(&show),
+                            &format!("wall beat updated ({})", dir.display()),
+                        ),
+                        Err(e) => fail(cli.json, &e.to_string()),
+                    }
+                }
+                WallCmd::Remove { id } => match wall_remove(&id) {
+                    Ok((dir, show)) => ok_writer(
+                        cli.json,
+                        &dir,
+                        &show,
+                        wall_summary(&show),
+                        &format!("wall beat removed ({})", dir.display()),
+                    ),
+                    Err(e) => fail(cli.json, &e.to_string()),
+                },
+                WallCmd::Reorder {
+                    id,
+                    before,
+                    after,
+                    index,
+                } => match wall_reorder(&id, before.as_deref(), after.as_deref(), index) {
+                    Ok((dir, show)) => ok_writer(
+                        cli.json,
+                        &dir,
+                        &show,
+                        wall_summary(&show),
+                        &format!("wall beat reordered ({})", dir.display()),
+                    ),
+                    Err(e) => fail(cli.json, &e.to_string()),
+                },
+                WallCmd::Status => match lot_core::require_current() {
+                    Ok((dir, show)) => ok_writer(
+                        cli.json,
+                        &dir,
+                        &show,
+                        wall_summary(&show),
+                        &format!("wall beats={} ({})", show.wall.len(), dir.display()),
                     ),
                     Err(e) => fail(cli.json, &e.to_string()),
                 },
@@ -716,19 +798,57 @@ fn main() -> ExitCode {
             if let Some(code) = apply_show(cli.show.as_deref(), cli.json) {
                 return code;
             }
-            let (shot, locked) = match cmd {
-                PictureCmd::Lock { shot } => (shot, true),
-                PictureCmd::Unlock { shot } => (shot, false),
-            };
-            match picture_lock(&shot, locked) {
-                Ok((dir, show)) => ok_writer(
-                    cli.json,
-                    &dir,
-                    &show,
-                    serde_json::json!({ "shots": show.shots }),
-                    &format!("picture shot {shot} locked={locked}"),
-                ),
-                Err(e) => fail(cli.json, &e.to_string()),
+            match cmd {
+                PictureCmd::Lock { shot } => match picture_lock(&shot, true) {
+                    Ok((dir, show)) => ok_writer(
+                        cli.json,
+                        &dir,
+                        &show,
+                        picture_summary(&show),
+                        &format!("picture shot {shot} locked"),
+                    ),
+                    Err(e) => fail(cli.json, &e.to_string()),
+                },
+                PictureCmd::Unlock { shot } => match picture_unlock(&shot) {
+                    Ok((dir, show)) => ok_writer(
+                        cli.json,
+                        &dir,
+                        &show,
+                        picture_summary(&show),
+                        &format!("picture shot {shot} unlocked"),
+                    ),
+                    Err(e) => fail(cli.json, &e.to_string()),
+                },
+                PictureCmd::Ref {
+                    shot,
+                    file,
+                    note,
+                    size,
+                } => match picture_ref(&shot, &file, note.as_deref(), size.as_deref()) {
+                    Ok((dir, show)) => ok_writer(
+                        cli.json,
+                        &dir,
+                        &show,
+                        picture_summary(&show),
+                        &format!("picture ref {shot}"),
+                    ),
+                    Err(e) => fail(cli.json, &e.to_string()),
+                },
+                PictureCmd::Status => match lot_core::require_current() {
+                    Ok((dir, show)) => ok_writer(
+                        cli.json,
+                        &dir,
+                        &show,
+                        picture_summary(&show),
+                        &format!(
+                            "picture shots={} locked={} ({})",
+                            show.shots.len(),
+                            show.shots.iter().filter(|s| s.locked).count(),
+                            dir.display()
+                        ),
+                    ),
+                    Err(e) => fail(cli.json, &e.to_string()),
+                },
             }
         }
         Cmd::Stage { cmd } => {

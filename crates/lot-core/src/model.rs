@@ -64,6 +64,9 @@ pub struct Shot {
     pub loras: Vec<SlateLora>,
     #[serde(default)]
     pub locked: bool,
+    /// Picture (Master Canvas) reference. Owned copy under picture/. Not a generated still.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub ref_path: Option<String>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub still_path: Option<String>,
     /// `grok` or `comfy`. Never inferred from the other engine.

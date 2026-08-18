@@ -86,6 +86,9 @@ fn lean_shots(v: &Value) -> Value {
                     "marks": marks,
                 });
                 if let Some(obj) = card.as_object_mut() {
+                    if let Some(media) = media_ref(s.get("ref_path"), None) {
+                        obj.insert("ref".into(), media);
+                    }
                     if let Some(media) = media_ref(s.get("still_path"), s.get("still_provenance")) {
                         obj.insert("still".into(), media);
                     }

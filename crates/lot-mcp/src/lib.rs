@@ -281,7 +281,7 @@ fn tools() -> Value {
         },
         {
             "name": "lot_wall_add",
-            "description": "Add a Cork Board beat card.",
+            "description": "Add a Cork Board beat card. Empty text → no beat —.",
             "inputSchema": {
                 "type": "object",
                 "properties": {
@@ -290,6 +290,55 @@ fn tools() -> Value {
                     "path": path_prop()
                 },
                 "required": ["text"]
+            }
+        },
+        {
+            "name": "lot_wall_update",
+            "description": "Rewrite a Cork Board beat by id. Empty text → no beat —.",
+            "inputSchema": {
+                "type": "object",
+                "properties": {
+                    "id": { "type": "string" },
+                    "text": { "type": "string" },
+                    "act": { "type": "string" },
+                    "path": path_prop()
+                },
+                "required": ["id"]
+            }
+        },
+        {
+            "name": "lot_wall_remove",
+            "description": "Remove a Cork Board beat by id. Unknown id → unknown beat.",
+            "inputSchema": {
+                "type": "object",
+                "properties": {
+                    "id": { "type": "string" },
+                    "path": path_prop()
+                },
+                "required": ["id"]
+            }
+        },
+        {
+            "name": "lot_wall_reorder",
+            "description": "Move a Cork Board beat. One of before, after, or index.",
+            "inputSchema": {
+                "type": "object",
+                "properties": {
+                    "id": { "type": "string" },
+                    "before": { "type": "string" },
+                    "after": { "type": "string" },
+                    "index": { "type": "integer" },
+                    "path": path_prop()
+                },
+                "required": ["id"]
+            }
+        },
+        {
+            "name": "lot_wall_status",
+            "description": "List Cork Board beat cards. Does not invent beats.",
+            "inputSchema": {
+                "type": "object",
+                "properties": { "path": path_prop() }
             }
         },
         {
@@ -345,6 +394,41 @@ fn tools() -> Value {
                     "path": path_prop()
                 },
                 "required": ["shot"]
+            }
+        },
+        {
+            "name": "lot_picture_unlock",
+            "description": "Unlock a Picture shot card. Does not rename the shot.",
+            "inputSchema": {
+                "type": "object",
+                "properties": {
+                    "shot": { "type": "string" },
+                    "path": path_prop()
+                },
+                "required": ["shot"]
+            }
+        },
+        {
+            "name": "lot_picture_ref",
+            "description": "Attach a jailed ref to a shot card. Copies into picture/. Does not delete the source. No fake PNG.",
+            "inputSchema": {
+                "type": "object",
+                "properties": {
+                    "shot": { "type": "string" },
+                    "file": { "type": "string" },
+                    "note": { "type": "string" },
+                    "size": { "type": "string" },
+                    "path": path_prop()
+                },
+                "required": ["shot", "file"]
+            }
+        },
+        {
+            "name": "lot_picture_status",
+            "description": "List Picture shot cards: lock, ref, name.",
+            "inputSchema": {
+                "type": "object",
+                "properties": { "path": path_prop() }
             }
         },
         {
@@ -1109,9 +1193,42 @@ fn dispatch(name: &str, args: &Value) -> Value {
             let text = args.get("text").and_then(|v| v.as_str()).unwrap_or("");
             let act = args.get("act").and_then(|v| v.as_str());
             match lot_core::wall_add(act, text) {
-                Ok((dir, show)) => mut_ok(&dir, &show, json!({ "wall": show.wall })),
+                Ok((dir, show)) => mut_ok(&dir, &show, lot_core::wall_summary(&show)),
                 Err(e) => tool_err(&e.to_string()),
             }
+        }),
+        "lot_wall_update" => with_path(&args, || {
+            let id = args.get("id").and_then(|v| v.as_str()).unwrap_or("");
+            let text = args.get("text").and_then(|v| v.as_str());
+            let act = args.get("act").and_then(|v| v.as_str());
+            match lot_core::wall_update(id, text, act) {
+                Ok((dir, show)) => mut_ok(&dir, &show, lot_core::wall_summary(&show)),
+                Err(e) => tool_err(&e.to_string()),
+            }
+        }),
+        "lot_wall_remove" => with_path(&args, || {
+            let id = args.get("id").and_then(|v| v.as_str()).unwrap_or("");
+            match lot_core::wall_remove(id) {
+                Ok((dir, show)) => mut_ok(&dir, &show, lot_core::wall_summary(&show)),
+                Err(e) => tool_err(&e.to_string()),
+            }
+        }),
+        "lot_wall_reorder" => with_path(&args, || {
+            let id = args.get("id").and_then(|v| v.as_str()).unwrap_or("");
+            let before = args.get("before").and_then(|v| v.as_str());
+            let after = args.get("after").and_then(|v| v.as_str());
+            let index = args
+                .get("index")
+                .and_then(|v| v.as_u64())
+                .map(|n| n as usize);
+            match lot_core::wall_reorder(id, before, after, index) {
+                Ok((dir, show)) => mut_ok(&dir, &show, lot_core::wall_summary(&show)),
+                Err(e) => tool_err(&e.to_string()),
+            }
+        }),
+        "lot_wall_status" => with_path(&args, || match lot_core::require_current() {
+            Ok((dir, show)) => mut_ok(&dir, &show, lot_core::wall_summary(&show)),
+            Err(e) => tool_err(&e.to_string()),
         }),
         "lot_stage_place" => with_path(&args, || {
             let shot = args.get("shot").and_then(|v| v.as_str()).unwrap_or("");
@@ -1150,9 +1267,30 @@ fn dispatch(name: &str, args: &Value) -> Value {
             let shot = args.get("shot").and_then(|v| v.as_str()).unwrap_or("");
             let locked = args.get("locked").and_then(|v| v.as_bool()).unwrap_or(true);
             match lot_core::picture_lock(shot, locked) {
-                Ok((dir, show)) => mut_ok(&dir, &show, json!({ "shots": show.shots })),
+                Ok((dir, show)) => mut_ok(&dir, &show, lot_core::picture_summary(&show)),
                 Err(e) => tool_err(&e.to_string()),
             }
+        }),
+        "lot_picture_unlock" => with_path(&args, || {
+            let shot = args.get("shot").and_then(|v| v.as_str()).unwrap_or("");
+            match lot_core::picture_unlock(shot) {
+                Ok((dir, show)) => mut_ok(&dir, &show, lot_core::picture_summary(&show)),
+                Err(e) => tool_err(&e.to_string()),
+            }
+        }),
+        "lot_picture_ref" => with_path(&args, || {
+            let shot = args.get("shot").and_then(|v| v.as_str()).unwrap_or("");
+            let file = args.get("file").and_then(|v| v.as_str()).unwrap_or("");
+            let note = args.get("note").and_then(|v| v.as_str());
+            let size = args.get("size").and_then(|v| v.as_str());
+            match lot_core::picture_ref(shot, Path::new(file), note, size) {
+                Ok((dir, show)) => mut_ok(&dir, &show, lot_core::picture_summary(&show)),
+                Err(e) => tool_err(&e.to_string()),
+            }
+        }),
+        "lot_picture_status" => with_path(&args, || match lot_core::require_current() {
+            Ok((dir, show)) => mut_ok(&dir, &show, lot_core::picture_summary(&show)),
+            Err(e) => tool_err(&e.to_string()),
         }),
         "lot_stills_generate" => with_path(&args, || {
             emit_progress(0.0, Some(1.0), "stills generate");
@@ -1801,6 +1939,15 @@ mod tests {
             "lot_writer_unlock",
             "lot_breakdown_import",
             "lot_breakdown_parse",
+            "lot_wall_add",
+            "lot_wall_update",
+            "lot_wall_remove",
+            "lot_wall_reorder",
+            "lot_wall_status",
+            "lot_picture_lock",
+            "lot_picture_unlock",
+            "lot_picture_ref",
+            "lot_picture_status",
             "lot_stage_place",
             "lot_stage_camera",
             "lot_stage_export",

@@ -133,7 +133,7 @@ fn section_touched(phase: &str, dir: &Path, show: &Show) -> bool {
         }
         "breakdown" => !show.scenes.is_empty() || !show.shots.is_empty(),
         "wall" => !show.wall.is_empty(),
-        "picture" => show.shots.iter().any(|s| s.locked),
+        "picture" => show.shots.iter().any(|s| s.locked || s.ref_path.is_some()),
         "stage" => {
             show.shots.iter().any(|s| {
                 !s.stage_marks.is_empty()
@@ -174,6 +174,9 @@ pub fn missing_media(dir: &Path, show: &Show) -> Vec<crate::MediaGap> {
         push_gap(&mut out, "draft", p, None, None);
     }
     for shot in &show.shots {
+        if let Some(p) = &shot.ref_path {
+            push_gap(&mut out, "ref", p, Some(&shot.num), Some(&shot.id));
+        }
         if let Some(p) = &shot.still_path {
             push_gap(&mut out, "still", p, Some(&shot.num), Some(&shot.id));
         }
