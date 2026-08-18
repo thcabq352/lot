@@ -780,6 +780,11 @@ mod tests {
         assert!(body.contains(r#"<format id="r1""#));
         assert!(body.contains("file://"));
         assert!(body.contains("media-rep"));
+        assert!(report.edl.is_file());
+        let edl = fs::read_to_string(&report.edl).unwrap();
+        assert!(edl.contains("TITLE:"));
+        assert!(edl.contains("FCM: NON-DROP FRAME"));
+        assert!(edl.contains("* FROM CLIP NAME: 01-foo.mp4"));
     }
 
     #[test]
@@ -797,6 +802,9 @@ mod tests {
         let first = crate::dailies_export().unwrap();
         assert!(!first.2.resumed);
         let xml = fs::read_to_string(&first.2.file).unwrap();
+        let edl = fs::read_to_string(&first.2.edl).unwrap();
+        assert!(first.2.edl.is_file());
+        assert!(edl.contains("* FROM CLIP NAME: 01-foo.mp4"));
         let events_after_first = fs::read_to_string(dir.join("events.jsonl")).unwrap();
         let export_count = events_after_first
             .lines()
@@ -806,7 +814,9 @@ mod tests {
         let second = crate::dailies_export().unwrap();
         assert!(second.2.resumed, "same circled takes must resume");
         assert_eq!(second.2.file, first.2.file);
+        assert_eq!(second.2.edl, first.2.edl);
         assert_eq!(fs::read_to_string(&second.2.file).unwrap(), xml);
+        assert_eq!(fs::read_to_string(&second.2.edl).unwrap(), edl);
         let events_after_second = fs::read_to_string(dir.join("events.jsonl")).unwrap();
         let export_count2 = events_after_second
             .lines()
@@ -814,6 +824,19 @@ mod tests {
             .count();
         assert_eq!(export_count2, 1, "resume must not append dailies.export");
         assert_eq!(read_show(&dir).unwrap().rev, first.1.rev);
+        fs::remove_file(&first.2.edl).unwrap();
+        let third = crate::dailies_export().unwrap();
+        assert!(
+            !third.2.resumed,
+            "matching FCPXML without EDL must write the EDL"
+        );
+        assert!(third.2.edl.is_file());
+        let export_count3 = fs::read_to_string(dir.join("events.jsonl"))
+            .unwrap()
+            .lines()
+            .filter(|l| l.contains("\"dailies.export\""))
+            .count();
+        assert_eq!(export_count3, 2);
     }
 
     #[test]

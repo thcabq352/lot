@@ -58,11 +58,11 @@ pub fn help_spec() -> Value {
             verb("lot slate lora --id --weight --model", "lot_slate_lora", "slate", "LoRA metadata on a shot or the show."),
             verb("lot dailies ingest --file", "lot_dailies_ingest", "dailies", "01-foo.mp4 binds to shot 01 without renaming it. Same file or sha256 resumes; no duplicate take. Crash mid-copy leaves a .part and retries."),
             verb("lot dailies circle --take", "lot_dailies_circle", "dailies", "Requires --take. No GUI. Already circled is a no-op."),
-            verb("lot dailies export", "lot_dailies_export", "dailies", "FCPXML 1.9 of circled takes (format + file:// URLs). Same XML is a no-op."),
+            verb("lot dailies export", "lot_dailies_export", "dailies", "FCPXML 1.9 + CMX 3600 EDL of circled takes. Same files are a no-op."),
             verb("lot stems soundtrack --brief", "lot_stems_soundtrack", "stems", "Cue sheet. --generate needs LOT_SOUNDTRACK_CMD. Never a silent stub."),
             verb("lot stems vo --text --generate", "lot_stems_vo", "stems", "SAPI / piper / espeak / say, or --file."),
             verb("lot finish --upscale --fps", "lot_finish", "cut", "Optional pickup. ffmpeg or LOT_UPSCALE_CMD. No stub. MCP cancel kills the child and writes no file."),
-            verb("lot cut export", "lot_cut_export", "cut", "Same FCPXML interchange. Same circled takes is a no-op."),
+            verb("lot cut export", "lot_cut_export", "cut", "Same FCPXML + EDL interchange. Same circled takes is a no-op."),
             verb("lot mcp", "", "kernel", "NDJSON JSON-RPC 2.0 on stdin/stdout.")
         ]
     })

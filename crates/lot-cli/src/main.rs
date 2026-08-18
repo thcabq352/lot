@@ -874,6 +874,7 @@ fn main() -> ExitCode {
                         &show,
                         serde_json::json!({
                             "export": report.file.display().to_string(),
+                            "edl": report.edl.display().to_string(),
                             "takes": report.takes,
                             "resumed": report.resumed
                         }),
@@ -1202,6 +1203,7 @@ fn dailies_cmd(cmd: DailiesCmd, json: bool) -> ExitCode {
                 &show,
                 serde_json::json!({
                     "export": report.file.display().to_string(),
+                    "edl": report.edl.display().to_string(),
                     "takes": report.takes,
                     "resumed": report.resumed
                 }),
