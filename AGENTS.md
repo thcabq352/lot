@@ -228,20 +228,23 @@ lot plugin call --id color --verb grade --json
 
 A section can be a declared adapter (sidecar stdio, or WASM later). Discover `LOT_PLUGIN_PATH` (`;` on Windows) and `show/plugins/{id}/plugin.json`. Manifest must include `sha256` of the adapter file. Missing hash → `undeclared —`. Wrong hash → `plugin hash mismatch —`. `kind: wasm` → `no wasm runtime —` (no invented runtime). Unknown id → `no plugin —`. Does not invent LUTs or media.
 
-## School exam (headless)
+## School exam + tutor (headless)
 
 ```
 lot school get --json
-lot school set --on --path writer --level beginner --amount nudge --json
+lot school set --on --path writer --level beginner --amount nudge --type theory --json
+lot school set --on --no-theory --json
 lot school score --fixture no-want --json
 lot school exam --fixture axis-fail --json
 ```
 
-Default **off**. Gold fixtures `no-want` and `axis-fail` need no GPU and no show. `school exam` never blocks `dailies export` / `cut export`. CLI exam exit 1 if the grade fails (CI). No lesson/quiz/theory fields while school is off.
+Default **off**. Gold fixtures `no-want` and `axis-fail` need no GPU and no show. `school exam` never blocks `dailies export` / `cut export`. CLI exam exit 1 if the grade fails (CI).
+
+Tutor rides on mutating `--json` / MCP payloads (no extra brain call). Off or `--amount mute`: no `lesson` / `quiz` / `theory` fields. On + nudge + theory (default when `--type` is omitted): one named beat (writer → `want-vs-need`, picture/dailies → `axis`) plus how it applies to this scene. `--no-theory` or empty `--type` unchecks theory and suppresses those fields. `--type craft` without theory is one craft line. Exam still never blocks export.
 
 ## Stack
 
-- `crates/lot-core` — schema, Writer, Breakdown, Stage, Dailies, Stems, Stills, Slate, Motion, Finish, snapshot, show lock, jail, budget, audit, handoff, resources, import, doctor, plugins, school exam, Ollama brain
+- `crates/lot-core` — schema, Writer, Breakdown, Stage, Dailies, Stems, Stills, Slate, Motion, Finish, snapshot, show lock, jail, budget, audit, handoff, resources, import, doctor, plugins, school exam + tutor, Ollama brain
 - `crates/lot-cli` — binary `lot`
 - `crates/lot-mcp` — stdio MCP (`lot mcp`)
 

@@ -107,6 +107,13 @@ pub fn mutation_json(dir: &Path, show: &Show, extra: Value) -> Value {
         }),
         "school": show.school,
     });
+    if let Value::Object(ann) = crate::school::tutor_fields(show) {
+        if let Some(obj) = v.as_object_mut() {
+            for (k, val) in ann {
+                obj.insert(k, val);
+            }
+        }
+    }
     if let (Some(obj), Value::Object(map)) = (v.as_object_mut(), extra) {
         for (k, val) in map {
             if matches!(

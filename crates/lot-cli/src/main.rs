@@ -233,7 +233,7 @@ enum PluginCmd {
 enum SchoolCmd {
     /// Read school switch.
     Get,
-    /// Enable / set path, level, amount.
+    /// Enable / set path, level, amount, and help types.
     Set {
         #[arg(long, default_value_t = false)]
         on: bool,
@@ -245,6 +245,12 @@ enum SchoolCmd {
         level: Option<String>,
         #[arg(long)]
         amount: Option<String>,
+        /// theory | craft | quiz | glossary. Repeatable. Omit = default theory when on.
+        #[arg(long = "type")]
+        types: Vec<String>,
+        /// Uncheck theory. Suppresses theory/lesson fields (AC-011).
+        #[arg(long = "no-theory", default_value_t = false)]
+        no_theory: bool,
     },
     /// Rubric ids + pass/fail.
     Score {
@@ -1305,6 +1311,8 @@ fn school_cmd(cmd: SchoolCmd, json: bool, show: Option<&Path>) -> ExitCode {
             path,
             level,
             amount,
+            types,
+            no_theory,
         } => {
             if let Some(code) = apply_show(show, json) {
                 return code;
@@ -1319,11 +1327,19 @@ fn school_cmd(cmd: SchoolCmd, json: bool, show: Option<&Path>) -> ExitCode {
             } else {
                 None
             };
+            let types = if no_theory {
+                Some(types.into_iter().filter(|t| t != "theory").collect())
+            } else if types.is_empty() {
+                None
+            } else {
+                Some(types)
+            };
             match school_set(
                 enabled,
                 path.as_deref(),
                 level.as_deref(),
                 amount.as_deref(),
+                types,
             ) {
                 Ok((dir, show)) => ok_writer(
                     json,

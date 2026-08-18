@@ -231,10 +231,14 @@ pub fn school_set(
     path: Option<&str>,
     level: Option<&str>,
     amount: Option<&str>,
+    types: Option<Vec<String>>,
 ) -> Result<(std::path::PathBuf, Show), ShowError> {
     let (dir, mut show) = require_write_current()?;
     if let Some(on) = enabled {
         show.school.enabled = on;
+        if on && show.school.help.is_none() && amount.is_none() {
+            show.school.help = Some("nudge".into());
+        }
     }
     if let Some(p) = path.map(str::trim).filter(|s| !s.is_empty()) {
         show.school.path = Some(normalize_path(p)?);
@@ -245,10 +249,104 @@ pub fn school_set(
     if let Some(a) = amount.map(str::trim).filter(|s| !s.is_empty()) {
         show.school.help = Some(normalize_help(a)?);
     }
+    if let Some(raw) = types {
+        let mut out = Vec::new();
+        for t in raw {
+            out.push(normalize_type(&t)?);
+        }
+        out.sort();
+        out.dedup();
+        show.school.help_types = Some(out);
+    }
     bump(&mut show);
     write_show(&dir, &show)?;
     append_event(&dir, "school.set", &show)?;
     Ok((dir, show))
+}
+
+fn normalize_type(id: &str) -> Result<String, ShowError> {
+    match id.trim() {
+        "theory" | "craft" | "quiz" | "glossary" => Ok(id.trim().into()),
+        other => Err(ShowError::Msg(format!("unknown school type — {other}"))),
+    }
+}
+
+fn effective_types(school: &crate::SchoolStatus) -> Vec<String> {
+    match &school.help_types {
+        Some(v) => v.clone(),
+        None => vec!["theory".into()],
+    }
+}
+
+fn pick_rubric(show: &Show) -> Option<Rubric> {
+    let id = match show.phase.as_str() {
+        "picture" | "board" | "slate" | "dailies" | "stage" | "motion" => "axis",
+        _ => "want-vs-need",
+    };
+    rubrics().into_iter().find(|r| r.id == id)
+}
+
+fn apply_to_this(show: &Show, rubric: &Rubric) -> String {
+    if let Some(sc) = show.scenes.first() {
+        let slug = if sc.slug.is_empty() {
+            sc.num.clone()
+        } else {
+            sc.slug.clone()
+        };
+        format!("On scene {} {}: {}", sc.num, slug, rubric.apply)
+    } else if let Some(sh) = show.shots.first() {
+        format!("On shot {}: {}", sh.num, rubric.apply)
+    } else {
+        format!("On this show: {}", rubric.apply)
+    }
+}
+
+/// Annotation object for tool payloads. Empty when School is off, mute, or theory unchecked.
+pub fn tutor_fields(show: &Show) -> Value {
+    if !show.school.enabled {
+        return json!({});
+    }
+    let amount = show.school.help.as_deref().unwrap_or("nudge");
+    if amount == "mute" {
+        return json!({});
+    }
+    let types = effective_types(&show.school);
+    let Some(rubric) = pick_rubric(show) else {
+        return json!({});
+    };
+    let apply = apply_to_this(show, &rubric);
+    let mut out = serde_json::Map::new();
+    if types.iter().any(|t| t == "theory") {
+        let mut beat = serde_json::Map::new();
+        beat.insert("id".into(), json!(rubric.id));
+        beat.insert("rule".into(), json!(rubric.rule));
+        beat.insert("apply".into(), json!(apply.clone()));
+        if amount == "coach" || amount == "walkthrough" {
+            beat.insert("counter_example".into(), json!(rubric.counter_example));
+            beat.insert("next".into(), json!(rubric.apply));
+        }
+        if amount == "walkthrough" {
+            beat.insert(
+                "steps".into(),
+                json!([
+                    format!("Rule: {}", rubric.rule),
+                    apply.clone(),
+                    "Skip anytime — School never blocks a production tool."
+                ]),
+            );
+        }
+        out.insert("theory".into(), Value::Object(beat));
+    }
+    if types.iter().any(|t| t == "craft") && !out.contains_key("theory") {
+        out.insert("craft".into(), json!({ "line": apply, "id": rubric.id }));
+    }
+    if types.iter().any(|t| t == "quiz") && amount != "nudge" {
+        out.insert(
+            "quiz".into(),
+            json!({ "id": rubric.id, "prompt": format!("Does this scene hold {}?", rubric.id) }),
+        );
+    }
+    Value::Object(out)
 }
 
 fn normalize_path(id: &str) -> Result<String, ShowError> {
@@ -371,7 +469,7 @@ mod tests {
         let dir = std::env::temp_dir().join(format!("lot-school-on-{}", std::process::id()));
         let _ = std::fs::remove_dir_all(&dir);
         crate::create_show(&dir, Some("RubricOn")).unwrap();
-        crate::school_set(Some(true), None, None, None).unwrap();
+        crate::school_set(Some(true), None, None, None, None).unwrap();
         let (_, _, card) = crate::resource_read("lot://school/rubric/want-vs-need").unwrap();
         assert_eq!(card["id"], "want-vs-need");
         assert!(card["rule"].as_str().unwrap().contains("want"));
@@ -383,5 +481,87 @@ mod tests {
             .unwrap_err()
             .to_string();
         assert!(err.contains("no fixture —"), "{err}");
+    }
+
+    #[test]
+    fn school_on_nudge_annotates_scene_one_theory() {
+        let _g = crate::TEST_ENV.lock().unwrap_or_else(|e| e.into_inner());
+        isolate();
+        let dir = std::env::temp_dir().join(format!("lot-school-tutor-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&dir);
+        crate::create_show(&dir, Some("Tutor")).unwrap();
+        std::fs::write(
+            dir.join(crate::SCREENPLAY_FILE),
+            "INT. TENT - NIGHT\n\nADA\nI want the coat off the hook.\n",
+        )
+        .unwrap();
+        crate::breakdown_parse(None).unwrap();
+        crate::school_set(Some(true), None, None, Some("nudge"), None).unwrap();
+        crate::set_brief("Ada wants the coat.").unwrap();
+        let show = crate::read_show(&dir).unwrap();
+        assert!(show.school.enabled);
+        let v = crate::mutation_json(
+            &dir,
+            &show,
+            serde_json::json!({ "draft": show.writer.draft_path }),
+        );
+        assert_eq!(v["theory"]["id"], "want-vs-need", "{v}");
+        let apply = v["theory"]["apply"].as_str().unwrap_or("");
+        assert!(apply.to_ascii_lowercase().contains("scene"), "{apply}");
+        assert!(
+            apply.to_ascii_lowercase().contains("tent")
+                || apply.contains("1")
+                || apply.contains("sc-"),
+            "{apply}"
+        );
+        assert!(v["theory"]["rule"].as_str().unwrap_or("").contains("want"));
+        assert!(v.get("quiz").is_none(), "{v}");
+        assert_eq!(show.writer.brief, "Ada wants the coat.");
+        let err = crate::dailies_export().unwrap_err().to_string();
+        assert!(err.contains("no circled takes"), "{err}");
+    }
+
+    #[test]
+    fn school_on_uncheck_theory_suppresses_fields() {
+        let _g = crate::TEST_ENV.lock().unwrap_or_else(|e| e.into_inner());
+        isolate();
+        let dir = std::env::temp_dir().join(format!("lot-school-notheory-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&dir);
+        crate::create_show(&dir, Some("NoTheory")).unwrap();
+        std::fs::write(
+            dir.join(crate::SCREENPLAY_FILE),
+            "INT. TENT - NIGHT\n\nADA\nI want the coat.\n",
+        )
+        .unwrap();
+        crate::breakdown_parse(None).unwrap();
+        crate::school_set(Some(true), None, None, Some("nudge"), Some(Vec::new())).unwrap();
+        let show = crate::read_show(&dir).unwrap();
+        let v = crate::mutation_json(
+            &dir,
+            &show,
+            serde_json::json!({ "brief": show.writer.brief }),
+        );
+        assert_eq!(v["school"]["enabled"], true);
+        for forbidden in ["lesson", "quiz", "theory", "school_note", "rubric"] {
+            assert!(
+                !v.as_object().unwrap().contains_key(forbidden),
+                "unchecked theory must not leak {forbidden} in {v}"
+            );
+        }
+    }
+
+    #[test]
+    fn school_on_mute_stays_quiet() {
+        let _g = crate::TEST_ENV.lock().unwrap_or_else(|e| e.into_inner());
+        isolate();
+        let dir = std::env::temp_dir().join(format!("lot-school-mute-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&dir);
+        crate::create_show(&dir, Some("Mute")).unwrap();
+        crate::school_set(Some(true), None, None, Some("mute"), None).unwrap();
+        let show = crate::read_show(&dir).unwrap();
+        let v = crate::mutation_json(&dir, &show, serde_json::json!({}));
+        assert_eq!(v["school"]["enabled"], true);
+        assert!(v.get("theory").is_none(), "{v}");
+        assert!(v.get("craft").is_none(), "{v}");
     }
 }

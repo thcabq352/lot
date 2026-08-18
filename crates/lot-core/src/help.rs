@@ -68,7 +68,7 @@ pub fn help_spec() -> Value {
             verb("lot plugin list", "lot_plugin_list", "kernel", "Declared adapters on LOT_PLUGIN_PATH and show/plugins. sha256 required."),
             verb("lot plugin call --id --verb", "lot_plugin_call", "kernel", "Run a stdio sidecar. WASM → no wasm runtime —. Hash mismatch / undeclared refuse. Does not invent media."),
             verb("lot school get", "lot_school_get", "school", "Read school switch. Default off."),
-            verb("lot school set --on|--off", "lot_school_set", "school", "Enable overlay. Path/level/amount optional. Never blocks export."),
+            verb("lot school set --on|--off", "lot_school_set", "school", "Enable overlay. Path/level/amount/--type/--no-theory optional. Default nudge. Mute stays quiet. Never blocks export."),
             verb("lot school score --fixture|--scene", "lot_school_score", "school", "Rubric ids + pass/fail. Gold fixtures: no-want, axis-fail. No GPU."),
             verb("lot school exam [--fixture]", "lot_school_exam", "school", "Grade craft+theory. Never blocks export. CLI exit 1 if the exam fails."),
             verb("lot mcp", "", "kernel", "NDJSON JSON-RPC 2.0 on stdin/stdout. Native agent door."),

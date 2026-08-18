@@ -74,7 +74,7 @@ pub use motion::{motion_analyze, motion_export, motion_marks, motion_plate};
 pub use plugin::{plugin_call, plugin_list, PluginInfo, PluginManifest};
 pub use resource::{resource_list, resource_read, ResourceRef};
 pub use school::{
-    school_exam, school_get, school_score, school_set, ExamReport, Score, ScoreReport,
+    school_exam, school_get, school_score, school_set, tutor_fields, ExamReport, Score, ScoreReport,
 };
 pub use show::{
     create_show, current_show_path, draft_screenplay, lock_writer, open_show, read_show,
@@ -150,6 +150,9 @@ pub struct SchoolStatus {
     pub level: Option<String>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub help: Option<String>,
+    /// Explicit help types. None = default theory when School is on. Empty = theory unchecked.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub help_types: Option<Vec<String>>,
 }
 
 impl Default for SchoolStatus {
@@ -159,6 +162,7 @@ impl Default for SchoolStatus {
             path: None,
             level: None,
             help: None,
+            help_types: None,
         }
     }
 }

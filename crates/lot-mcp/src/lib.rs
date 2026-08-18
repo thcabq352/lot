@@ -760,14 +760,16 @@ fn tools() -> Value {
         },
         {
             "name": "lot_school_set",
-            "description": "Enable School overlay. Never blocks export.",
+            "description": "Enable School overlay. types / no_theory set the tutor. Never blocks export.",
             "inputSchema": {
                 "type": "object",
                 "properties": {
                     "enabled": { "type": "boolean" },
                     "school_path": { "type": "string", "description": "director | writer | dp | editor | producer | filmmaker" },
                     "level": { "type": "string" },
-                    "amount": { "type": "string" },
+                    "amount": { "type": "string", "description": "mute | nudge | coach | walkthrough" },
+                    "types": { "type": "array", "items": { "type": "string" }, "description": "theory | craft | quiz | glossary. Omit = default theory when on." },
+                    "no_theory": { "type": "boolean", "description": "Uncheck theory. Suppresses theory fields." },
                     "path": path_prop(),
                     "cap": cap_prop(),
                     "agent": agent_prop()
@@ -1535,7 +1537,17 @@ fn dispatch(name: &str, args: &Value) -> Value {
                 .and_then(|v| v.as_str());
             let level = args.get("level").and_then(|v| v.as_str());
             let amount = args.get("amount").and_then(|v| v.as_str());
-            match lot_core::school_set(enabled, school_path, level, amount) {
+            let mut types = str_list(&args, "types").or_else(|| str_list(&args, "type"));
+            let no_theory = args
+                .get("no_theory")
+                .and_then(|v| v.as_bool())
+                .unwrap_or(false);
+            if no_theory {
+                let mut v = types.unwrap_or_default();
+                v.retain(|t| t != "theory");
+                types = Some(v);
+            }
+            match lot_core::school_set(enabled, school_path, level, amount, types) {
                 Ok((dir, show)) => mut_ok(&dir, &show, json!({ "school": show.school })),
                 Err(e) => tool_err(&e.to_string()),
             }

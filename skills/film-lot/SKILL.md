@@ -100,7 +100,8 @@ Pass `cap` / `--cap` / `LOT_CAP`. Unset = all. `read` cannot circle or generate 
 - Read one card: `lot_show` / `lot_scene` / `lot_shot` / `lot_take`, or MCP `lot://show` · `lot://scenes/{id}` · `lot://shots/{id}` · `lot://takes/{id}`. Do not dump `show.json`.
 - `lot_import --file` brings in old suite files (cork-board, canvas, blockout marks, sbref, slate, ctake, scriptbreak). Never delete the source. No invented glTF or still.
 - Plugins: `lot_plugin_list` / `lot_plugin_call`. Declared `plugin.json` + sha256. WASM → `no wasm runtime —`. Do not invent a LUT.
-- School exam (no GPU): `lot_school_score --fixture no-want` / `lot_school_exam --fixture axis-fail`. Never blocks export. Skip pedagogy if `school.enabled` is false.
+- School exam (no GPU): `lot_school_score --fixture no-want` / `lot_school_exam --fixture axis-fail`. Never blocks export.
+- School tutor: skip pedagogy if `school.enabled` is false or `school.help` is `mute`. If on + nudge, one `theory` (or `craft`) beat on the mutation payload — use it; do not invent a lecture. `lot_school_set` with `no_theory: true` or empty `types` unchecks theory. Exam never blocks export.
 
 ## William bar
 
