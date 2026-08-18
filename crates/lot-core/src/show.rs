@@ -490,6 +490,7 @@ pub(crate) fn append_event_with(
         .open(path)?;
     let (_id, line) = crate::audit::stamp(kind, show, extra);
     writeln!(f, "{line}")?;
+    crate::telemetry::record(kind);
     Ok(())
 }
 
@@ -521,7 +522,7 @@ pub fn current_show_path() -> Result<Option<PathBuf>, ShowError> {
     Ok(Some(PathBuf::from(s)))
 }
 
-fn lot_home() -> Result<PathBuf, ShowError> {
+pub(crate) fn lot_home() -> Result<PathBuf, ShowError> {
     if let Ok(p) = std::env::var("LOT_HOME") {
         return Ok(PathBuf::from(p));
     }

@@ -822,6 +822,16 @@ fn tools() -> Value {
             }
         },
         {
+            "name": "lot_telemetry",
+            "description": "Local verb counts. Default off. Counts only — no scripts, frames, prompts, or phone-home.",
+            "inputSchema": {
+                "type": "object",
+                "properties": {
+                    "enabled": { "type": "boolean" }
+                }
+            }
+        },
+        {
             "name": "lot_doctor",
             "description": "Probe ffmpeg, Comfy, Grok, Ollama (LLM + vision), VO TTS, soundtrack, prompt server, Motion Previs, Blockout, upscale.",
             "inputSchema": { "type": "object", "properties": {} }
@@ -840,6 +850,7 @@ fn decorate_mutating_tools(list: &mut Value) {
         "lot_help",
         "lot_version",
         "lot_upgrade",
+        "lot_telemetry",
         "lot_doctor",
     ];
     let output_schema = json!({
@@ -1592,6 +1603,20 @@ fn dispatch(name: &str, args: &Value) -> Value {
                 }
             }
         }
+        "lot_telemetry" => {
+            let enabled = args.get("enabled").and_then(|v| v.as_bool());
+            let report = match enabled {
+                Some(on) => lot_core::telemetry_set(on),
+                None => Ok(lot_core::telemetry_get()),
+            };
+            match report {
+                Ok(r) => match serde_json::to_value(&r) {
+                    Ok(v) => tool_ok(&v),
+                    Err(e) => tool_err(&e.to_string()),
+                },
+                Err(e) => tool_err(&e.to_string()),
+            }
+        }
         "lot_doctor" => {
             let d = lot_core::Doctor::probe();
             match serde_json::to_value(&d) {
@@ -1795,6 +1820,7 @@ mod tests {
             "lot_help",
             "lot_version",
             "lot_upgrade",
+            "lot_telemetry",
             "lot_stills_generate",
             "lot_stills_describe",
             "lot_board_export",

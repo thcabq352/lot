@@ -8,6 +8,7 @@ pub fn help_spec() -> Value {
         "version": crate::VERSION,
         "door": ["cli", "mcp", "http"],
         "school_default": "off",
+        "telemetry_default": "off",
         "notice": "Flags only. No TTY prompts. Exit 0 = ok. Do not click folder dialogs. --agent / LOT_AGENT / MCP agent: who writes (unset = human, no auto-claim). --cap / LOT_CAP / MCP cap: read|write|render|export|spend (unset = all). --detail full / MCP detail=full dumps shot prompts and cards; default --json is lean (ids, counts, media path+sha256+duration). Jail = this show.lot + LOT_MEDIA_ROOTS; fountain is scene text (AC-013). Show budget: lot budget --spend/--render (hit cap → stop). MCP notifications/cancelled stops stills generate, finish, and draft (cancelled —; no fake PNG/wav/fountain). lot status --json includes dirty, missing, missing_media.",
         "verbs": [
             verb("lot status", "lot_status", "kernel", "First call. Phase, dirty sections, missing (handoff blockers), missing_media, renderer, school."),
@@ -30,6 +31,7 @@ pub fn help_spec() -> Value {
             verb("lot help --json", "lot_help", "kernel", "This spec. The binary is the contract."),
             verb("lot version", "lot_version", "kernel", "Kernel name + version. No show required."),
             verb("lot upgrade --check", "lot_upgrade", "kernel", "Compare current version to LOT_UPGRADE_URL. Never downloads. Unset → no upgrade channel —. Missing --check → no upgrade — use --check."),
+            verb("lot telemetry [--on|--off]", "lot_telemetry", "kernel", "Local verb counts. Default off. Counts only — no scripts, frames, prompts, or phone-home."),
             verb("lot snapshot", "lot_snapshot", "kernel", "Freeze show.json + fountain at the current rev."),
             verb("lot restore --rev", "lot_restore", "kernel", "Restore a snapshot. Later drafts do not eat earlier ones."),
             verb("lot undo", "lot_undo", "kernel", "Undo the last mutation from the event log. No prior snapshot. Create-only or already undone → nothing to undo —."),
@@ -122,10 +124,12 @@ mod tests {
             "lot_school_set",
             "lot_school_score",
             "lot_school_exam",
+            "lot_telemetry",
         ] {
             assert!(mcps.contains(&n), "missing {n} in {mcps:?}");
         }
         assert_eq!(v["school_default"], "off");
+        assert_eq!(v["telemetry_default"], "off");
         let doors: Vec<&str> = v["door"]
             .as_array()
             .unwrap()

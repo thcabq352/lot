@@ -7,8 +7,9 @@ use lot_core::{
     resource_read, restore_show, revise_screenplay, school_exam, school_get, school_score,
     school_set, set_brief, set_budget, set_style, show_log, slate_compile, slate_lora, slate_set,
     slate_target, snapshot_list, snapshot_show, stage_camera, stage_export, stage_place,
-    stems_soundtrack, stems_vo, stills_describe, stills_generate, undo_show, unlock_show,
-    unlock_writer, upgrade_check, upsert_cast, version_info, wall_add, Doctor, Status,
+    stems_soundtrack, stems_vo, stills_describe, stills_generate, telemetry_get, telemetry_set,
+    undo_show, unlock_show, unlock_writer, upgrade_check, upsert_cast, version_info, wall_add,
+    Doctor, Status,
 };
 use std::path::{Path, PathBuf};
 use std::process::ExitCode;
@@ -194,6 +195,13 @@ enum Cmd {
     Upgrade {
         #[arg(long, default_value_t = false)]
         check: bool,
+    },
+    /// Local usage counts. Default off. Counts only — no scripts, frames, or prompts.
+    Telemetry {
+        #[arg(long, default_value_t = false)]
+        on: bool,
+        #[arg(long, default_value_t = false)]
+        off: bool,
     },
     /// Runtime probes (ffmpeg / Comfy / brains). No GUI.
     Doctor,
@@ -1184,6 +1192,33 @@ fn main() -> ExitCode {
                         println!(
                             "{} {} latest {} update={}",
                             r.name, r.version, r.latest, r.update
+                        );
+                    }
+                    ExitCode::SUCCESS
+                }
+                Err(e) => fail(cli.json, &e.to_string()),
+            }
+        }
+        Cmd::Telemetry { on, off } => {
+            if on && off {
+                return fail(cli.json, "telemetry — use --on or --off");
+            }
+            let report = if on {
+                telemetry_set(true)
+            } else if off {
+                telemetry_set(false)
+            } else {
+                Ok(telemetry_get())
+            };
+            match report {
+                Ok(r) => {
+                    if cli.json {
+                        println!("{}", serde_json::to_string(&r).expect("telemetry json"));
+                    } else {
+                        println!(
+                            "telemetry {} {}",
+                            if r.enabled { "on" } else { "off" },
+                            r.counts.values().sum::<u64>()
                         );
                     }
                     ExitCode::SUCCESS

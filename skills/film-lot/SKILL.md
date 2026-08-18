@@ -52,6 +52,7 @@ A show is a directory with `show.json` + `events.jsonl` + `media/`.
 1. `lot_status` (or `lot status --json`)
 2. `lot_doctor` (or `lot doctor --json`)
 3. `lot_version` if you need the kernel version. `lot_upgrade` with `check: true` if `LOT_UPGRADE_URL` is set — never downloads. Unset → `no upgrade channel —`.
+4. `lot_telemetry` is optional. Default off. If on, read counts only — never send scripts, frames, or prompts.
 
 Read `school`, `renderer`, `phase`, `dirty`, `missing`, `missing_media`, `cap`, `locked_by`, `agent`, `budget`, `last_event`, `doctor`. `missing` is the current-phase handoff gate. `dirty` is sections that already have work. `missing_media` is referenced paths that are not files. If `school.enabled` is false, skip all pedagogy. If `locked_by` is someone else, stop — do not clobber.
 

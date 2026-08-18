@@ -37,6 +37,7 @@ mod snapshot;
 mod stage;
 mod stems;
 mod stills;
+mod telemetry;
 mod undo;
 mod version;
 
@@ -89,6 +90,7 @@ pub use stems::{stems_soundtrack, stems_vo, Stems};
 pub use stills::{
     board_export, comfy_workflow_ready, resolve_comfy_workflow, stills_describe, stills_generate,
 };
+pub use telemetry::{get as telemetry_get, set as telemetry_set, Report as TelemetryReport};
 pub use undo::undo_show;
 pub use version::{
     upgrade_check, version_info, UpgradeReport, VersionInfo, NO_CHANNEL as UPGRADE_NO_CHANNEL,

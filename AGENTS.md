@@ -15,11 +15,14 @@ lot open <dir> --json
 lot doctor --json
 lot version --json
 lot upgrade --check --json
+lot telemetry --json
 lot mcp
 lot serve --bind 127.0.0.1:8787 --json
 ```
 
 `lot version --json` / `lot_version` is name + crate version (no show). `lot upgrade --check` / `lot_upgrade` `{check:true}` compares to `LOT_UPGRADE_URL` (JSON `version`/`latest` or a one-line version). Never downloads. Unset channel → `no upgrade channel —`. Missing `--check` → `no upgrade — use --check`.
+
+`lot telemetry` / `lot_telemetry` is local verb counts. Default **off**. `--on` / `{enabled:true}` writes `$LOT_HOME/telemetry.json`. Counts kinds only (`writer.brief`). Never scripts, frames, prompts, or a network send. `LOT_TELEMETRY=off` forces quiet.
 
 Optional `--show <path>` (CLI global) or MCP `path` opens that show, then runs. Omit to keep the current pointer.
 
@@ -33,7 +36,7 @@ Show budget: `lot budget --spend N --render N` (or `--clear-spend` / `--clear-re
 
 `lot mcp` is NDJSON JSON-RPC 2.0 on stdin/stdout — the native agent door. `lot serve [--bind]` is an optional HTTP/OpenAPI twin (default `127.0.0.1:8787`). Same tool names: `POST /lot_status`, `GET /openapi.json`. Not required. Bind fails → `no serve —` and no silent listen. Tools:
 
-- `lot_status`, `lot_create`, `lot_open`, `lot_doctor`, `lot_help`, `lot_version`, `lot_upgrade`, `lot_snapshot`, `lot_restore`, `lot_undo`, `lot_lock`, `lot_unlock`, `lot_budget`, `lot_log`, `lot_handoff`
+- `lot_status`, `lot_create`, `lot_open`, `lot_doctor`, `lot_help`, `lot_version`, `lot_upgrade`, `lot_telemetry`, `lot_snapshot`, `lot_restore`, `lot_undo`, `lot_lock`, `lot_unlock`, `lot_budget`, `lot_log`, `lot_handoff`
 - `lot_show`, `lot_scene`, `lot_shot`, `lot_take`, `lot_import`
 - `lot_writer_brief`, `lot_writer_style`, `lot_writer_cast`, `lot_writer_draft`, `lot_writer_revise`, `lot_writer_lock`, `lot_writer_unlock`
 - `lot_breakdown_import`, `lot_breakdown_parse`
@@ -244,7 +247,7 @@ Tutor rides on mutating `--json` / MCP payloads (no extra brain call). Off or `-
 
 ## Stack
 
-- `crates/lot-core` — schema, Writer, Breakdown, Stage, Dailies, Stems, Stills, Slate, Motion, Finish, snapshot, show lock, jail, budget, audit, handoff, resources, import, doctor, plugins, school exam + tutor, Ollama brain
+- `crates/lot-core` — schema, Writer, Breakdown, Stage, Dailies, Stems, Stills, Slate, Motion, Finish, snapshot, show lock, jail, budget, audit, handoff, resources, import, doctor, plugins, school exam + tutor, telemetry, Ollama brain
 - `crates/lot-cli` — binary `lot`
 - `crates/lot-mcp` — stdio MCP (`lot mcp`)
 
