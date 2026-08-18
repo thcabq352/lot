@@ -17,6 +17,7 @@ pub struct IngestReport {
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct ExportReport {
     pub file: PathBuf,
+    pub edl: PathBuf,
     pub takes: usize,
     pub resumed: bool,
 }
@@ -259,30 +260,31 @@ pub fn dailies_export() -> Result<(PathBuf, Show, ExportReport), ShowError> {
     }
     let takes_n = circled.len();
     let xml = fcpxml(&show.name, &circled, &dir);
+    let edl = cmx3600(&show.name, &circled);
     drop(circled);
-    let out = dir.join("export.fcpxml");
-    if out.is_file() {
-        if let Ok(existing) = fs::read_to_string(&out) {
-            if existing == xml {
-                return Ok((
-                    dir,
-                    show,
-                    ExportReport {
-                        file: out,
-                        takes: takes_n,
-                        resumed: true,
-                    },
-                ));
-            }
-        }
+    let xml_out = dir.join("export.fcpxml");
+    let edl_out = dir.join("export.edl");
+    if same_text(&xml_out, &xml) && same_text(&edl_out, &edl) {
+        return Ok((
+            dir,
+            show,
+            ExportReport {
+                file: xml_out,
+                edl: edl_out,
+                takes: takes_n,
+                resumed: true,
+            },
+        ));
     }
-    fs::write(&out, xml)?;
+    fs::write(&xml_out, xml)?;
+    fs::write(&edl_out, edl)?;
     append_event_with(
         &dir,
         "dailies.export",
         &show,
         Some(serde_json::json!({
-            "file": out.display().to_string(),
+            "file": xml_out.display().to_string(),
+            "edl": edl_out.display().to_string(),
             "takes": takes_n
         })),
     )?;
@@ -290,11 +292,16 @@ pub fn dailies_export() -> Result<(PathBuf, Show, ExportReport), ShowError> {
         dir,
         show,
         ExportReport {
-            file: out,
+            file: xml_out,
+            edl: edl_out,
             takes: takes_n,
             resumed: false,
         },
     ))
+}
+
+fn same_text(path: &Path, want: &str) -> bool {
+    path.is_file() && fs::read_to_string(path).ok().as_deref() == Some(want)
 }
 
 const FCP_FPS: i64 = 24;
@@ -303,6 +310,76 @@ fn take_frames(t: &Take) -> i64 {
     let dur = t.duration_secs.filter(|d| *d > 0.0).unwrap_or(5.0);
     let frames = (dur * FCP_FPS as f64).round() as i64;
     frames.max(1)
+}
+
+fn cmx3600(title: &str, takes: &[&Take]) -> String {
+    let mut out = String::from("TITLE: ");
+    out.push_str(&edl_title(title));
+    out.push_str("\nFCM: NON-DROP FRAME\n");
+    let mut rec: i64 = 0;
+    for (i, t) in takes.iter().enumerate() {
+        let frames = take_frames(t);
+        let src_out = timecode(frames);
+        let rec_in = timecode(rec);
+        let rec_out = timecode(rec + frames);
+        let reel = reel_name(&t.filename);
+        let ev = i + 1;
+        out.push_str(&format!(
+            "\n{ev:03}  {reel} V     C        00:00:00:00 {src_out} {rec_in} {rec_out}\n"
+        ));
+        let clip = if t.filename.is_empty() {
+            Path::new(&t.path)
+                .file_name()
+                .and_then(|s| s.to_str())
+                .unwrap_or("clip")
+                .to_string()
+        } else {
+            t.filename.clone()
+        };
+        out.push_str(&format!("* FROM CLIP NAME: {clip}\n"));
+        if !t.path.is_empty() {
+            let src =
+                std::path::absolute(Path::new(&t.path)).unwrap_or_else(|_| PathBuf::from(&t.path));
+            out.push_str(&format!("* SOURCE FILE: {}\n", src.display()));
+        }
+        rec += frames;
+    }
+    out
+}
+
+fn edl_title(s: &str) -> String {
+    s.chars()
+        .filter(|c| *c != '\n' && *c != '\r')
+        .take(80)
+        .collect()
+}
+
+fn reel_name(filename: &str) -> String {
+    let stem = Path::new(filename)
+        .file_stem()
+        .and_then(|s| s.to_str())
+        .unwrap_or("AX");
+    let mut s: String = stem
+        .chars()
+        .filter(|c| c.is_ascii_alphanumeric())
+        .map(|c| c.to_ascii_uppercase())
+        .take(8)
+        .collect();
+    if s.is_empty() {
+        s.push_str("AX");
+    }
+    format!("{s:<8}")
+}
+
+fn timecode(frames: i64) -> String {
+    let frames = frames.max(0);
+    let ff = frames % FCP_FPS;
+    let secs = frames / FCP_FPS;
+    let ss = secs % 60;
+    let mins = secs / 60;
+    let mm = mins % 60;
+    let hh = mins / 60;
+    format!("{hh:02}:{mm:02}:{ss:02}:{ff:02}")
 }
 
 fn fcpxml(title: &str, takes: &[&Take], show_dir: &Path) -> String {
@@ -461,6 +538,28 @@ mod tests {
         );
         assert!(!xml.contains(r#"format="r0""#));
         assert!(!xml.contains("file://localhost/"));
+        let edl = cmx3600("Carnival", &[&t1, &t2]);
+        assert!(edl.starts_with("TITLE: Carnival\n"));
+        assert!(edl.contains("FCM: NON-DROP FRAME"));
+        assert!(edl.contains(
+            "001  01FOO    V     C        00:00:00:00 00:00:02:00 00:00:00:00 00:00:02:00"
+        ));
+        assert!(edl.contains(
+            "002  02BAR    V     C        00:00:00:00 00:00:03:00 00:00:02:00 00:00:05:00"
+        ));
+        assert!(edl.contains("* FROM CLIP NAME: 01-foo.mp4"));
+        assert!(edl.contains("* FROM CLIP NAME: 02-bar.mp4"));
+        assert!(edl.contains("* SOURCE FILE:"));
+    }
+
+    #[test]
+    fn timecode_is_24fps_ndf() {
+        assert_eq!(timecode(0), "00:00:00:00");
+        assert_eq!(timecode(24), "00:00:01:00");
+        assert_eq!(timecode(48), "00:00:02:00");
+        assert_eq!(timecode(24 * 60), "00:01:00:00");
+        assert_eq!(reel_name("01-foo.mp4"), "01FOO   ");
+        assert_eq!(reel_name(""), "AX      ");
     }
 
     #[test]

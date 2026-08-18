@@ -63,9 +63,9 @@ If `doctor.stills_comfy_workflow` is false, Comfy stills will fail honestly — 
 5. **Stills / Board** — `stills generate --backend grok|comfy` (no silent swap), `stills describe` (Grok vision or Ollama VL; no invented look), then `board export`. Generates record seed, prompt hash, duration, VRAM cap so a take can be reshot. MCP `notifications/cancelled` stops stills generate / finish / draft (`cancelled —`; no fake PNG, wav, or fountain).
 6. **Motion** — plate + marks (`camera_only` | `actor_motion` | `object_motion` | `full_scene`). Export `motion/previs.json`. Pose/depth stay in Motion Previs Studio. Never invent OpenPose.
 7. **Slate** — canon on the shot; `slate compile --target` for LTX, API providers, or `LOT_PROMPT_SERVER`. LoRAs are metadata. No invented rewrite if the brain/server is down.
-8. **Dailies** — ingest `01-foo.mp4` → shot 01 (do not rename the shot), circle, FCPXML 1.9. Circle without `--take` fails (no GUI). Same circled takes twice is a no-op.
+8. **Dailies** — ingest `01-foo.mp4` → shot 01 (do not rename the shot), circle, FCPXML 1.9 + CMX 3600 EDL. Circle without `--take` fails (no GUI). Same circled takes twice is a no-op.
 9. **Stems** — soundtrack cue + attach or `LOT_SOUNDTRACK_CMD`; VO generate (SAPI / piper / espeak / say) or attach. Never a fake track.
-10. **Finish / Cut** — optional `finish --upscale --fps`; FCPXML interchange (`lot cut export` = `lot dailies export`). Same circled takes is a no-op. Missing engine → `no finish —` and no stub.
+10. **Finish / Cut** — optional `finish --upscale --fps`; FCPXML + EDL interchange (`lot cut export` = `lot dailies export`). Same circled takes is a no-op. Missing engine → `no finish —` and no stub.
 
 `lot snapshot` / `lot restore --rev` before a risky revise. `lot undo` reverts the last write from the event log (no snapshot needed). `lot handoff` (dry-run) before leaving a phase; `lot handoff --commit` only when ready. `lot lock` / `lot unlock` when sharing a show. `lot budget --spend` / `--render` before a spendy generate. `lot help --json` is the contract.
 
