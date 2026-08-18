@@ -65,6 +65,12 @@ pub fn help_spec() -> Value {
             verb("lot stems vo --text --generate", "lot_stems_vo", "stems", "SAPI / piper / espeak / say, or --file."),
             verb("lot finish --upscale --fps", "lot_finish", "cut", "Optional pickup. ffmpeg or LOT_UPSCALE_CMD. No stub. MCP cancel kills the child and writes no file."),
             verb("lot cut export", "lot_cut_export", "cut", "Same FCPXML + EDL interchange. Same circled takes is a no-op."),
+            verb("lot plugin list", "lot_plugin_list", "kernel", "Declared adapters on LOT_PLUGIN_PATH and show/plugins. sha256 required."),
+            verb("lot plugin call --id --verb", "lot_plugin_call", "kernel", "Run a stdio sidecar. WASM → no wasm runtime —. Hash mismatch / undeclared refuse. Does not invent media."),
+            verb("lot school get", "lot_school_get", "school", "Read school switch. Default off."),
+            verb("lot school set --on|--off", "lot_school_set", "school", "Enable overlay. Path/level/amount optional. Never blocks export."),
+            verb("lot school score --fixture|--scene", "lot_school_score", "school", "Rubric ids + pass/fail. Gold fixtures: no-want, axis-fail. No GPU."),
+            verb("lot school exam [--fixture]", "lot_school_exam", "school", "Grade craft+theory. Never blocks export. CLI exit 1 if the exam fails."),
             verb("lot mcp", "", "kernel", "NDJSON JSON-RPC 2.0 on stdin/stdout. Native agent door."),
             verb("lot serve [--bind]", "", "kernel", "Optional HTTP/OpenAPI twin. Same tool names as MCP. Default 127.0.0.1:8787. Not required — lot mcp is the agent door.")
         ]
@@ -110,6 +116,12 @@ mod tests {
             "lot_import",
             "lot_motion_plate",
             "lot_stills_describe",
+            "lot_plugin_list",
+            "lot_plugin_call",
+            "lot_school_get",
+            "lot_school_set",
+            "lot_school_score",
+            "lot_school_exam",
         ] {
             assert!(mcps.contains(&n), "missing {n} in {mcps:?}");
         }

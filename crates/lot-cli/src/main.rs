@@ -3,9 +3,10 @@ use lot_core::{
     board_export, breakdown_parse, breakdown_summary, create_show, dailies_circle, dailies_export,
     dailies_ingest, draft_screenplay, export_log, finish_pickup, handoff, help_plain, help_spec,
     import_file, lock_show, lock_writer, motion_analyze, motion_export, motion_marks, motion_plate,
-    mutation_json, open_show, picture_lock, replace_cast_json, resource_read, restore_show,
-    revise_screenplay, set_brief, set_budget, set_style, show_log, slate_compile, slate_lora,
-    slate_set, slate_target, snapshot_list, snapshot_show, stage_camera, stage_export, stage_place,
+    mutation_json, open_show, picture_lock, plugin_call, plugin_list, replace_cast_json,
+    resource_read, restore_show, revise_screenplay, school_exam, school_get, school_score,
+    school_set, set_brief, set_budget, set_style, show_log, slate_compile, slate_lora, slate_set,
+    slate_target, snapshot_list, snapshot_show, stage_camera, stage_export, stage_place,
     stems_soundtrack, stems_vo, stills_describe, stills_generate, undo_show, unlock_show,
     unlock_writer, upgrade_check, upsert_cast, version_info, wall_add, Doctor, Status,
 };
@@ -202,6 +203,60 @@ enum Cmd {
     Serve {
         #[arg(long)]
         bind: Option<String>,
+    },
+    /// Declared section adapters (stdio sidecar or WASM).
+    Plugin {
+        #[command(subcommand)]
+        cmd: PluginCmd,
+    },
+    /// Headless exam pack. Default off. Never blocks export.
+    School {
+        #[command(subcommand)]
+        cmd: SchoolCmd,
+    },
+}
+
+#[derive(Subcommand)]
+enum PluginCmd {
+    /// List declared plugins.
+    List,
+    /// Call a plugin verb. Does not invent media.
+    Call {
+        #[arg(long)]
+        id: String,
+        #[arg(long)]
+        verb: String,
+    },
+}
+
+#[derive(Subcommand)]
+enum SchoolCmd {
+    /// Read school switch.
+    Get,
+    /// Enable / set path, level, amount.
+    Set {
+        #[arg(long, default_value_t = false)]
+        on: bool,
+        #[arg(long, default_value_t = false)]
+        off: bool,
+        #[arg(long)]
+        path: Option<String>,
+        #[arg(long)]
+        level: Option<String>,
+        #[arg(long)]
+        amount: Option<String>,
+    },
+    /// Rubric ids + pass/fail.
+    Score {
+        #[arg(long)]
+        scene: Option<String>,
+        #[arg(long)]
+        fixture: Option<String>,
+    },
+    /// Grade this show or a gold fixture. Exit 1 if the exam fails.
+    Exam {
+        #[arg(long)]
+        fixture: Option<String>,
     },
 }
 
@@ -1188,6 +1243,147 @@ fn main() -> ExitCode {
                     }
                 }
                 Err(e) => fail(cli.json, &format!("no serve — {e}")),
+            }
+        }
+        Cmd::Plugin { cmd } => plugin_cmd(cmd, cli.json, cli.show.as_deref()),
+        Cmd::School { cmd } => school_cmd(cmd, cli.json, cli.show.as_deref()),
+    }
+}
+
+fn plugin_cmd(cmd: PluginCmd, json: bool, show: Option<&Path>) -> ExitCode {
+    if let Some(code) = apply_show(show, json) {
+        return code;
+    }
+    match cmd {
+        PluginCmd::List => match plugin_list() {
+            Ok(list) => {
+                if json {
+                    println!(
+                        "{}",
+                        serde_json::json!({ "ok": true, "plugins": list, "n": list.len() })
+                    );
+                } else {
+                    println!("plugins {}", list.len());
+                }
+                ExitCode::SUCCESS
+            }
+            Err(e) => fail(json, &e.to_string()),
+        },
+        PluginCmd::Call { id, verb } => match plugin_call(&id, &verb, None) {
+            Ok((dir, show, out)) => ok_writer(
+                json,
+                &dir,
+                &show,
+                serde_json::json!({ "plugin": id, "verb": verb, "result": out }),
+                &format!("plugin {id} {verb}"),
+            ),
+            Err(e) => fail(json, &e.to_string()),
+        },
+    }
+}
+
+fn school_cmd(cmd: SchoolCmd, json: bool, show: Option<&Path>) -> ExitCode {
+    match cmd {
+        SchoolCmd::Get => {
+            if let Some(code) = apply_show(show, json) {
+                return code;
+            }
+            match school_get() {
+                Ok((dir, show)) => ok_writer(
+                    json,
+                    &dir,
+                    &show,
+                    serde_json::json!({ "school": show.school }),
+                    &format!("school {}", if show.school.enabled { "on" } else { "off" }),
+                ),
+                Err(e) => fail(json, &e.to_string()),
+            }
+        }
+        SchoolCmd::Set {
+            on,
+            off,
+            path,
+            level,
+            amount,
+        } => {
+            if let Some(code) = apply_show(show, json) {
+                return code;
+            }
+            if on && off {
+                return fail(json, "school set — use --on or --off");
+            }
+            let enabled = if on {
+                Some(true)
+            } else if off {
+                Some(false)
+            } else {
+                None
+            };
+            match school_set(
+                enabled,
+                path.as_deref(),
+                level.as_deref(),
+                amount.as_deref(),
+            ) {
+                Ok((dir, show)) => ok_writer(
+                    json,
+                    &dir,
+                    &show,
+                    serde_json::json!({ "school": show.school }),
+                    &format!("school {}", if show.school.enabled { "on" } else { "off" }),
+                ),
+                Err(e) => fail(json, &e.to_string()),
+            }
+        }
+        SchoolCmd::Score { scene, fixture } => {
+            if fixture.is_none() {
+                if let Some(code) = apply_show(show, json) {
+                    return code;
+                }
+            }
+            match school_score(scene.as_deref(), fixture.as_deref()) {
+                Ok(report) => {
+                    if json {
+                        println!("{}", serde_json::to_string(&report).unwrap_or_default());
+                    } else {
+                        println!(
+                            "school score {}",
+                            report
+                                .scores
+                                .iter()
+                                .map(|s| format!("{}={}", s.id, s.pass))
+                                .collect::<Vec<_>>()
+                                .join(" ")
+                        );
+                    }
+                    ExitCode::SUCCESS
+                }
+                Err(e) => fail(json, &e.to_string()),
+            }
+        }
+        SchoolCmd::Exam { fixture } => {
+            if fixture.is_none() {
+                if let Some(code) = apply_show(show, json) {
+                    return code;
+                }
+            }
+            match school_exam(fixture.as_deref()) {
+                Ok(report) => {
+                    if json {
+                        println!("{}", serde_json::to_string(&report).unwrap_or_default());
+                    } else {
+                        println!(
+                            "school exam {}",
+                            if report.passed { "pass" } else { "fail" }
+                        );
+                    }
+                    if report.passed {
+                        ExitCode::SUCCESS
+                    } else {
+                        ExitCode::from(1)
+                    }
+                }
+                Err(e) => fail(json, &e.to_string()),
             }
         }
     }

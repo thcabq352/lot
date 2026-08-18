@@ -93,13 +93,10 @@ pub fn read_for(dir: &std::path::Path, show: &Show, uri: &str) -> Result<Value, 
         return take_card(show, id);
     }
     if let Some(id) = rest.strip_prefix("school/rubric/") {
-        let _ = id;
         if !show.school.enabled {
             return Err(ShowError::Msg("school off — no rubric".into()));
         }
-        return Err(ShowError::Msg(
-            "no rubric — school packs not in this kernel".into(),
-        ));
+        return crate::school::rubric(id);
     }
     Err(ShowError::Msg(format!("unknown resource — {uri}")))
 }

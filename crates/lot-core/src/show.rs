@@ -551,10 +551,8 @@ fn new_id() -> String {
 mod tests {
     use super::*;
     use std::sync::atomic::{AtomicU64, Ordering};
-    use std::sync::Mutex;
 
     static N: AtomicU64 = AtomicU64::new(0);
-    static ENV: Mutex<()> = Mutex::new(());
 
     fn tmp() -> PathBuf {
         let n = N.fetch_add(1, Ordering::SeqCst);
@@ -598,7 +596,7 @@ mod tests {
 
     #[test]
     fn create_then_read() {
-        let _g = ENV.lock().unwrap_or_else(|e| e.into_inner());
+        let _g = crate::TEST_ENV.lock().unwrap_or_else(|e| e.into_inner());
         isolate_home();
         let dir = tmp();
         let (path, show) = create_show(&dir, Some("Demo")).unwrap();
@@ -614,7 +612,7 @@ mod tests {
 
     #[test]
     fn refuse_second_create() {
-        let _g = ENV.lock().unwrap_or_else(|e| e.into_inner());
+        let _g = crate::TEST_ENV.lock().unwrap_or_else(|e| e.into_inner());
         isolate_home();
         let dir = tmp();
         create_show(&dir, Some("A")).unwrap();
@@ -626,7 +624,7 @@ mod tests {
 
     #[test]
     fn unknown_genre_errors() {
-        let _g = ENV.lock().unwrap_or_else(|e| e.into_inner());
+        let _g = crate::TEST_ENV.lock().unwrap_or_else(|e| e.into_inner());
         setup_show("G");
         let err = set_style(Some(&["not-a-genre".into()]), None, None, None)
             .unwrap_err()
@@ -636,7 +634,7 @@ mod tests {
 
     #[test]
     fn style_and_cast_persist() {
-        let _g = ENV.lock().unwrap_or_else(|e| e.into_inner());
+        let _g = crate::TEST_ENV.lock().unwrap_or_else(|e| e.into_inner());
         let (dir, _) = setup_show("Style");
         set_style(
             Some(&["drama".into(), "thriller".into()]),
@@ -666,7 +664,7 @@ mod tests {
 
     #[test]
     fn lock_blocks_then_unlock_restores() {
-        let _g = ENV.lock().unwrap_or_else(|e| e.into_inner());
+        let _g = crate::TEST_ENV.lock().unwrap_or_else(|e| e.into_inner());
         setup_show("Lock");
         set_brief("a clown at the gate").unwrap();
         lock_writer().unwrap();
@@ -693,7 +691,7 @@ mod tests {
 
     #[test]
     fn revise_without_draft_errors() {
-        let _g = ENV.lock().unwrap_or_else(|e| e.into_inner());
+        let _g = crate::TEST_ENV.lock().unwrap_or_else(|e| e.into_inner());
         setup_show("Revise");
         set_brief("something happens").unwrap();
         let err = revise_screenplay("make it shorter")
@@ -704,7 +702,7 @@ mod tests {
 
     #[test]
     fn empty_brief_refuses_draft() {
-        let _g = ENV.lock().unwrap_or_else(|e| e.into_inner());
+        let _g = crate::TEST_ENV.lock().unwrap_or_else(|e| e.into_inner());
         setup_show("Empty");
         let err = draft_screenplay().unwrap_err().to_string();
         assert!(err.contains("no brief"), "{err}");
@@ -712,7 +710,7 @@ mod tests {
 
     #[test]
     fn no_brain_does_not_write_stub() {
-        let _g = ENV.lock().unwrap_or_else(|e| e.into_inner());
+        let _g = crate::TEST_ENV.lock().unwrap_or_else(|e| e.into_inner());
         let (dir, _) = setup_show("Brain");
         isolate_brain();
         set_brief("a carnival drama").unwrap();
@@ -728,7 +726,7 @@ mod tests {
 
     #[test]
     fn replace_cast_json_all() {
-        let _g = ENV.lock().unwrap_or_else(|e| e.into_inner());
+        let _g = crate::TEST_ENV.lock().unwrap_or_else(|e| e.into_inner());
         let (dir, _) = setup_show("JsonCast");
         upsert_cast("Temp", None, None, None).unwrap();
         replace_cast_json(
@@ -743,7 +741,7 @@ mod tests {
 
     #[test]
     fn breakdown_import_matches_golden_fixture() {
-        let _g = ENV.lock().unwrap_or_else(|e| e.into_inner());
+        let _g = crate::TEST_ENV.lock().unwrap_or_else(|e| e.into_inner());
         let (dir, _) = setup_show("Carnival");
         let fixture = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("fixtures/carnival.txt");
         crate::breakdown_parse(Some(&fixture)).unwrap();
@@ -758,7 +756,7 @@ mod tests {
 
     #[test]
     fn dailies_ingest_binds_prefix_keeps_shot_name() {
-        let _g = ENV.lock().unwrap_or_else(|e| e.into_inner());
+        let _g = crate::TEST_ENV.lock().unwrap_or_else(|e| e.into_inner());
         let (dir, _) = setup_show("Ingest");
         let fixture = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("fixtures/carnival.txt");
         crate::breakdown_parse(Some(&fixture)).unwrap();
@@ -789,7 +787,7 @@ mod tests {
 
     #[test]
     fn cut_export_same_circled_takes_is_idempotent() {
-        let _g = ENV.lock().unwrap_or_else(|e| e.into_inner());
+        let _g = crate::TEST_ENV.lock().unwrap_or_else(|e| e.into_inner());
         let (dir, _) = setup_show("CutIdempotent");
         let fixture = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("fixtures/carnival.txt");
         crate::breakdown_parse(Some(&fixture)).unwrap();
@@ -841,7 +839,7 @@ mod tests {
 
     #[test]
     fn dailies_ingest_same_clip_is_idempotent() {
-        let _g = ENV.lock().unwrap_or_else(|e| e.into_inner());
+        let _g = crate::TEST_ENV.lock().unwrap_or_else(|e| e.into_inner());
         let (dir, _) = setup_show("Idempotent");
         let fixture = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("fixtures/carnival.txt");
         crate::breakdown_parse(Some(&fixture)).unwrap();
@@ -866,7 +864,7 @@ mod tests {
 
     #[test]
     fn dailies_ingest_same_bytes_other_name_reuses_take() {
-        let _g = ENV.lock().unwrap_or_else(|e| e.into_inner());
+        let _g = crate::TEST_ENV.lock().unwrap_or_else(|e| e.into_inner());
         let (dir, _) = setup_show("SameBytes");
         let fixture = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("fixtures/carnival.txt");
         crate::breakdown_parse(Some(&fixture)).unwrap();
@@ -887,7 +885,7 @@ mod tests {
 
     #[test]
     fn dailies_ingest_resumes_partial_copy() {
-        let _g = ENV.lock().unwrap_or_else(|e| e.into_inner());
+        let _g = crate::TEST_ENV.lock().unwrap_or_else(|e| e.into_inner());
         let (dir, _) = setup_show("ResumeCopy");
         let fixture = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("fixtures/carnival.txt");
         crate::breakdown_parse(Some(&fixture)).unwrap();
@@ -920,7 +918,7 @@ mod tests {
 
     #[test]
     fn dailies_circle_twice_is_idempotent() {
-        let _g = ENV.lock().unwrap_or_else(|e| e.into_inner());
+        let _g = crate::TEST_ENV.lock().unwrap_or_else(|e| e.into_inner());
         let (dir, _) = setup_show("CircleOnce");
         let fixture = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("fixtures/carnival.txt");
         crate::breakdown_parse(Some(&fixture)).unwrap();
@@ -941,7 +939,7 @@ mod tests {
 
     #[test]
     fn advertisement_and_music_video_formats() {
-        let _g = ENV.lock().unwrap_or_else(|e| e.into_inner());
+        let _g = crate::TEST_ENV.lock().unwrap_or_else(|e| e.into_inner());
         let (dir, _) = setup_show("Ad");
         set_style(None, None, None, Some("ad")).unwrap();
         assert_eq!(
@@ -957,7 +955,7 @@ mod tests {
 
     #[test]
     fn soundtrack_cue_no_fake_audio() {
-        let _g = ENV.lock().unwrap_or_else(|e| e.into_inner());
+        let _g = crate::TEST_ENV.lock().unwrap_or_else(|e| e.into_inner());
         let (dir, _) = setup_show("Score");
         isolate_brain();
         std::env::remove_var("LOT_SOUNDTRACK_CMD");
@@ -981,7 +979,7 @@ mod tests {
 
     #[test]
     fn stills_backend_required_no_swap() {
-        let _g = ENV.lock().unwrap_or_else(|e| e.into_inner());
+        let _g = crate::TEST_ENV.lock().unwrap_or_else(|e| e.into_inner());
         let (dir, mut show) = setup_show("Stills");
         isolate_brain();
         show.shots.push(crate::model::Shot {
@@ -1017,7 +1015,7 @@ mod tests {
 
     #[test]
     fn comfy_workflow_off_skips_bundled_unset_finds_pack() {
-        let _g = ENV.lock().unwrap_or_else(|e| e.into_inner());
+        let _g = crate::TEST_ENV.lock().unwrap_or_else(|e| e.into_inner());
         std::env::set_var("LOT_COMFY_WORKFLOW", "off");
         assert!(crate::stills::resolve_comfy_workflow().is_err());
         std::env::remove_var("LOT_COMFY_WORKFLOW");
@@ -1030,7 +1028,7 @@ mod tests {
 
     #[test]
     fn stills_describe_no_image_and_no_invented_look() {
-        let _g = ENV.lock().unwrap_or_else(|e| e.into_inner());
+        let _g = crate::TEST_ENV.lock().unwrap_or_else(|e| e.into_inner());
         let (dir, mut show) = setup_show("Look");
         isolate_brain();
         show.shots.push(crate::model::Shot {
@@ -1072,7 +1070,7 @@ mod tests {
 
     #[test]
     fn read_cannot_circle_or_stills_generate() {
-        let _g = ENV.lock().unwrap_or_else(|e| e.into_inner());
+        let _g = crate::TEST_ENV.lock().unwrap_or_else(|e| e.into_inner());
         let (dir, mut show) = setup_show("Caps");
         isolate_brain();
         show.shots.push(crate::model::Shot {
@@ -1128,7 +1126,7 @@ mod tests {
 
     #[test]
     fn board_export_lists_shots() {
-        let _g = ENV.lock().unwrap_or_else(|e| e.into_inner());
+        let _g = crate::TEST_ENV.lock().unwrap_or_else(|e| e.into_inner());
         let (dir, mut show) = setup_show("Board");
         show.shots.push(crate::model::Shot {
             id: "sh-1".into(),
@@ -1148,7 +1146,7 @@ mod tests {
 
     #[test]
     fn vo_needs_text() {
-        let _g = ENV.lock().unwrap_or_else(|e| e.into_inner());
+        let _g = crate::TEST_ENV.lock().unwrap_or_else(|e| e.into_inner());
         setup_show("VO");
         let err = crate::stems_vo(None, None, false).unwrap_err().to_string();
         assert!(err.contains("vo"), "{err}");
@@ -1156,7 +1154,7 @@ mod tests {
 
     #[test]
     fn circle_without_take_errors() {
-        let _g = ENV.lock().unwrap_or_else(|e| e.into_inner());
+        let _g = crate::TEST_ENV.lock().unwrap_or_else(|e| e.into_inner());
         setup_show("NoTake");
         let err = crate::dailies_circle("").unwrap_err().to_string();
         assert!(err.contains("take") || err.contains("circle"), "{err}");
@@ -1164,7 +1162,7 @@ mod tests {
 
     #[test]
     fn slate_target_does_not_replace_canon() {
-        let _g = ENV.lock().unwrap_or_else(|e| e.into_inner());
+        let _g = crate::TEST_ENV.lock().unwrap_or_else(|e| e.into_inner());
         let (dir, mut show) = setup_show("Slate");
         show.shots.push(crate::model::Shot {
             id: "sh-1".into(),
@@ -1192,7 +1190,7 @@ mod tests {
 
     #[test]
     fn slate_compile_no_brain_does_not_invent() {
-        let _g = ENV.lock().unwrap_or_else(|e| e.into_inner());
+        let _g = crate::TEST_ENV.lock().unwrap_or_else(|e| e.into_inner());
         let (dir, mut show) = setup_show("Compile");
         isolate_brain();
         std::env::remove_var("LOT_PROMPT_SERVER");
@@ -1219,7 +1217,7 @@ mod tests {
 
     #[test]
     fn motion_plate_keeps_shot_name_and_exports_marks() {
-        let _g = ENV.lock().unwrap_or_else(|e| e.into_inner());
+        let _g = crate::TEST_ENV.lock().unwrap_or_else(|e| e.into_inner());
         let (dir, mut show) = setup_show("Motion");
         show.shots.push(crate::model::Shot {
             id: "sh-1".into(),
@@ -1254,7 +1252,7 @@ mod tests {
 
     #[test]
     fn finish_refuses_stub() {
-        let _g = ENV.lock().unwrap_or_else(|e| e.into_inner());
+        let _g = crate::TEST_ENV.lock().unwrap_or_else(|e| e.into_inner());
         let (dir, _) = setup_show("Finish");
         std::env::remove_var("LOT_UPSCALE_CMD");
         let err = crate::finish_pickup(None, false, None)
@@ -1272,7 +1270,7 @@ mod tests {
 
     #[test]
     fn stage_marks_keep_shot_name_and_export() {
-        let _g = ENV.lock().unwrap_or_else(|e| e.into_inner());
+        let _g = crate::TEST_ENV.lock().unwrap_or_else(|e| e.into_inner());
         let (dir, mut show) = setup_show("Stage");
         show.shots.push(crate::model::Shot {
             id: "sh-1".into(),
@@ -1314,7 +1312,7 @@ mod tests {
 
     #[test]
     fn snapshot_then_restore_keeps_earlier_brief() {
-        let _g = ENV.lock().unwrap_or_else(|e| e.into_inner());
+        let _g = crate::TEST_ENV.lock().unwrap_or_else(|e| e.into_inner());
         let (dir, _) = setup_show("Snap");
         crate::set_brief("version one — Ada will not put it on").unwrap();
         let rev = read_show(&dir).unwrap().rev;
@@ -1334,7 +1332,7 @@ mod tests {
 
     #[test]
     fn undo_last_event_restores_brief_without_snapshot() {
-        let _g = ENV.lock().unwrap_or_else(|e| e.into_inner());
+        let _g = crate::TEST_ENV.lock().unwrap_or_else(|e| e.into_inner());
         let (dir, _) = setup_show("Undo");
         let err = crate::undo_show().unwrap_err().to_string();
         assert!(err.starts_with("nothing to undo"), "{err}");
@@ -1360,7 +1358,7 @@ mod tests {
 
     #[test]
     fn second_agent_gets_locked_by() {
-        let _g = ENV.lock().unwrap_or_else(|e| e.into_inner());
+        let _g = crate::TEST_ENV.lock().unwrap_or_else(|e| e.into_inner());
         let (dir, _) = setup_show("Lock");
         crate::agent::set_agent(Some("hermes".into()));
         crate::set_brief("hermes holds the show").unwrap();
@@ -1390,7 +1388,7 @@ mod tests {
 
     #[test]
     fn audit_records_who_and_export_redacts() {
-        let _g = ENV.lock().unwrap_or_else(|e| e.into_inner());
+        let _g = crate::TEST_ENV.lock().unwrap_or_else(|e| e.into_inner());
         let (dir, _) = setup_show("Audit");
         crate::agent::set_agent(Some("hermes".into()));
         crate::set_brief("hermes wrote this").unwrap();
@@ -1421,7 +1419,7 @@ mod tests {
 
     #[test]
     fn status_lists_dirty_missing_and_missing_media() {
-        let _g = ENV.lock().unwrap_or_else(|e| e.into_inner());
+        let _g = crate::TEST_ENV.lock().unwrap_or_else(|e| e.into_inner());
         let (dir, _) = setup_show("StatusGaps");
         let st = crate::Status::bootstrap();
         assert_eq!(st.phase.as_deref(), Some("writer"));
@@ -1483,7 +1481,7 @@ mod tests {
 
     #[test]
     fn jail_blocks_other_show_and_ac013_is_scene_text() {
-        let _g = ENV.lock().unwrap_or_else(|e| e.into_inner());
+        let _g = crate::TEST_ENV.lock().unwrap_or_else(|e| e.into_inner());
         let (other, _) = setup_show("Other");
         fs::write(
             other.join("screenplay.fountain"),
@@ -1531,7 +1529,7 @@ mod tests {
 
     #[test]
     fn show_spend_cap_stops_before_grok() {
-        let _g = ENV.lock().unwrap_or_else(|e| e.into_inner());
+        let _g = crate::TEST_ENV.lock().unwrap_or_else(|e| e.into_inner());
         let (dir, mut show) = setup_show("Cap");
         isolate_brain();
         show.shots.push(crate::model::Shot {
@@ -1558,7 +1556,7 @@ mod tests {
 
     #[test]
     fn handoff_dry_run_then_commit() {
-        let _g = ENV.lock().unwrap_or_else(|e| e.into_inner());
+        let _g = crate::TEST_ENV.lock().unwrap_or_else(|e| e.into_inner());
         let (dir, show) = setup_show("Handoff");
         let rev = show.rev;
         let (_, _, dry) = crate::handoff(false).unwrap();
@@ -1603,7 +1601,7 @@ mod tests {
 
     #[test]
     fn resources_are_one_card() {
-        let _g = ENV.lock().unwrap_or_else(|e| e.into_inner());
+        let _g = crate::TEST_ENV.lock().unwrap_or_else(|e| e.into_inner());
         let (dir, _) = setup_show("Cards");
         fs::write(
             dir.join(SCREENPLAY_FILE),
@@ -1631,7 +1629,7 @@ mod tests {
 
     #[test]
     fn import_suite_keeps_source_and_does_not_invent() {
-        let _g = ENV.lock().unwrap_or_else(|e| e.into_inner());
+        let _g = crate::TEST_ENV.lock().unwrap_or_else(|e| e.into_inner());
         let (dir, mut show) = setup_show("Suite");
         show.shots.push(crate::model::Shot {
             id: "sh-1".into(),
@@ -1691,7 +1689,7 @@ mod tests {
 
     #[test]
     fn cancel_stills_generate_writes_no_png() {
-        let _g = ENV.lock().unwrap_or_else(|e| e.into_inner());
+        let _g = crate::TEST_ENV.lock().unwrap_or_else(|e| e.into_inner());
         let (dir, mut show) = setup_show("CancelStills");
         isolate_brain();
         show.shots.push(crate::model::Shot {
@@ -1732,7 +1730,7 @@ mod tests {
 
     #[test]
     fn cancel_draft_writes_no_fountain() {
-        let _g = ENV.lock().unwrap_or_else(|e| e.into_inner());
+        let _g = crate::TEST_ENV.lock().unwrap_or_else(|e| e.into_inner());
         let (dir, _) = setup_show("CancelDraft");
         isolate_brain();
         crate::set_brief("A woman waits by a neon tent.").unwrap();
@@ -1752,7 +1750,7 @@ mod tests {
 
     #[test]
     fn cancel_finish_writes_no_stub() {
-        let _g = ENV.lock().unwrap_or_else(|e| e.into_inner());
+        let _g = crate::TEST_ENV.lock().unwrap_or_else(|e| e.into_inner());
         let (dir, _) = setup_show("CancelFinish");
         let clip = dir.join("media").join("01-foo.mp4");
         fs::create_dir_all(clip.parent().unwrap()).unwrap();

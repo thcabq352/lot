@@ -43,6 +43,8 @@ Show budget: `lot budget --spend N --render N` (or `--clear-spend` / `--clear-re
 - `lot_motion_plate`, `lot_motion_marks`, `lot_motion_export`, `lot_motion_analyze`
 - `lot_dailies_ingest`, `lot_dailies_circle`, `lot_dailies_export`, `lot_cut_export`, `lot_finish`
 - `lot_stems_soundtrack`, `lot_stems_vo`
+- `lot_plugin_list`, `lot_plugin_call`
+- `lot_school_get`, `lot_school_set`, `lot_school_score`, `lot_school_exam`
 
 Hermes:
 
@@ -141,7 +143,7 @@ lot shot --num 01 --json
 lot take --id tk-1 --json
 ```
 
-MCP `resources/list` + `resources/read`. URIs: `lot://show`, `lot://scenes/{id}`, `lot://shots/{id}`, `lot://takes/{id}`. One card, not the whole `show.json`. Fountain is not in `lot://show`. School off → `lot://school/rubric/{id}` is `school off — no rubric`.
+MCP `resources/list` + `resources/read`. URIs: `lot://show`, `lot://scenes/{id}`, `lot://shots/{id}`, `lot://takes/{id}`. One card, not the whole `show.json`. Fountain is not in `lot://show`. School off → `lot://school/rubric/{id}` is `school off — no rubric`. School on → the rubric pack card.
 
 ## Import (old suite)
 
@@ -217,9 +219,29 @@ lot stems vo --file vo.wav --json
 
 No soundtrack engine → `no soundtrack engine —` and **no** silent stub. No TTS → `no vo brain —`.
 
+## Plugins
+
+```
+lot plugin list --json
+lot plugin call --id color --verb grade --json
+```
+
+A section can be a declared adapter (sidecar stdio, or WASM later). Discover `LOT_PLUGIN_PATH` (`;` on Windows) and `show/plugins/{id}/plugin.json`. Manifest must include `sha256` of the adapter file. Missing hash → `undeclared —`. Wrong hash → `plugin hash mismatch —`. `kind: wasm` → `no wasm runtime —` (no invented runtime). Unknown id → `no plugin —`. Does not invent LUTs or media.
+
+## School exam (headless)
+
+```
+lot school get --json
+lot school set --on --path writer --level beginner --amount nudge --json
+lot school score --fixture no-want --json
+lot school exam --fixture axis-fail --json
+```
+
+Default **off**. Gold fixtures `no-want` and `axis-fail` need no GPU and no show. `school exam` never blocks `dailies export` / `cut export`. CLI exam exit 1 if the grade fails (CI). No lesson/quiz/theory fields while school is off.
+
 ## Stack
 
-- `crates/lot-core` — schema, Writer, Breakdown, Stage, Dailies, Stems, Stills, Slate, Motion, Finish, snapshot, show lock, jail, budget, audit, handoff, resources, import, doctor, Ollama brain
+- `crates/lot-core` — schema, Writer, Breakdown, Stage, Dailies, Stems, Stills, Slate, Motion, Finish, snapshot, show lock, jail, budget, audit, handoff, resources, import, doctor, plugins, school exam, Ollama brain
 - `crates/lot-cli` — binary `lot`
 - `crates/lot-mcp` — stdio MCP (`lot mcp`)
 

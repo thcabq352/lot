@@ -727,6 +727,79 @@ fn tools() -> Value {
             }
         },
         {
+            "name": "lot_plugin_list",
+            "description": "List declared plugins (LOT_PLUGIN_PATH and show/plugins). sha256 required to call.",
+            "inputSchema": {
+                "type": "object",
+                "properties": { "path": path_prop(), "cap": cap_prop() }
+            }
+        },
+        {
+            "name": "lot_plugin_call",
+            "description": "Run a declared stdio plugin. WASM → no wasm runtime —. Hash mismatch / undeclared refuse. Does not invent media.",
+            "inputSchema": {
+                "type": "object",
+                "properties": {
+                    "id": { "type": "string" },
+                    "verb": { "type": "string" },
+                    "args": { "type": "object" },
+                    "path": path_prop(),
+                    "cap": cap_prop(),
+                    "agent": agent_prop()
+                },
+                "required": ["id", "verb"]
+            }
+        },
+        {
+            "name": "lot_school_get",
+            "description": "Read school switch. Default off.",
+            "inputSchema": {
+                "type": "object",
+                "properties": { "path": path_prop(), "cap": cap_prop() }
+            }
+        },
+        {
+            "name": "lot_school_set",
+            "description": "Enable School overlay. Never blocks export.",
+            "inputSchema": {
+                "type": "object",
+                "properties": {
+                    "enabled": { "type": "boolean" },
+                    "school_path": { "type": "string", "description": "director | writer | dp | editor | producer | filmmaker" },
+                    "level": { "type": "string" },
+                    "amount": { "type": "string" },
+                    "path": path_prop(),
+                    "cap": cap_prop(),
+                    "agent": agent_prop()
+                }
+            }
+        },
+        {
+            "name": "lot_school_score",
+            "description": "Rubric ids + pass/fail. Fixtures: no-want, axis-fail. No GPU.",
+            "inputSchema": {
+                "type": "object",
+                "properties": {
+                    "scene": { "type": "string" },
+                    "fixture": { "type": "string" },
+                    "path": path_prop(),
+                    "cap": cap_prop()
+                }
+            }
+        },
+        {
+            "name": "lot_school_exam",
+            "description": "Grade craft+theory on this show or a fixture. Never blocks export.",
+            "inputSchema": {
+                "type": "object",
+                "properties": {
+                    "fixture": { "type": "string" },
+                    "path": path_prop(),
+                    "cap": cap_prop()
+                }
+            }
+        },
+        {
             "name": "lot_help",
             "description": "Machine-readable spec. The binary is the contract.",
             "inputSchema": { "type": "object", "properties": {} }
@@ -1431,6 +1504,63 @@ fn dispatch(name: &str, args: &Value) -> Value {
                 Err(e) => tool_err(&e.to_string()),
             }
         }),
+        "lot_plugin_list" => with_path(&args, || match lot_core::plugin_list() {
+            Ok(list) => tool_ok(&json!({ "ok": true, "plugins": list, "n": list.len() })),
+            Err(e) => tool_err(&e.to_string()),
+        }),
+        "lot_plugin_call" => with_path(&args, || {
+            let id = args.get("id").and_then(|v| v.as_str()).unwrap_or("");
+            let verb = args.get("verb").and_then(|v| v.as_str()).unwrap_or("");
+            if id.is_empty() || verb.is_empty() {
+                return tool_err("id and verb are required");
+            }
+            match lot_core::plugin_call(id, verb, args.get("args").cloned()) {
+                Ok((dir, show, out)) => mut_ok(
+                    &dir,
+                    &show,
+                    json!({ "plugin": id, "verb": verb, "result": out }),
+                ),
+                Err(e) => tool_err(&e.to_string()),
+            }
+        }),
+        "lot_school_get" => with_path(&args, || match lot_core::school_get() {
+            Ok((dir, show)) => mut_ok(&dir, &show, json!({ "school": show.school })),
+            Err(e) => tool_err(&e.to_string()),
+        }),
+        "lot_school_set" => with_path(&args, || {
+            let enabled = args.get("enabled").and_then(|v| v.as_bool());
+            let school_path = args
+                .get("school_path")
+                .or_else(|| args.get("track"))
+                .and_then(|v| v.as_str());
+            let level = args.get("level").and_then(|v| v.as_str());
+            let amount = args.get("amount").and_then(|v| v.as_str());
+            match lot_core::school_set(enabled, school_path, level, amount) {
+                Ok((dir, show)) => mut_ok(&dir, &show, json!({ "school": show.school })),
+                Err(e) => tool_err(&e.to_string()),
+            }
+        }),
+        "lot_school_score" => with_path(&args, || {
+            let scene = args.get("scene").and_then(|v| v.as_str());
+            let fixture = args.get("fixture").and_then(|v| v.as_str());
+            match lot_core::school_score(scene, fixture) {
+                Ok(r) => match serde_json::to_value(&r) {
+                    Ok(v) => tool_ok(&v),
+                    Err(e) => tool_err(&e.to_string()),
+                },
+                Err(e) => tool_err(&e.to_string()),
+            }
+        }),
+        "lot_school_exam" => with_path(&args, || {
+            let fixture = args.get("fixture").and_then(|v| v.as_str());
+            match lot_core::school_exam(fixture) {
+                Ok(r) => match serde_json::to_value(&r) {
+                    Ok(v) => tool_ok(&v),
+                    Err(e) => tool_err(&e.to_string()),
+                },
+                Err(e) => tool_err(&e.to_string()),
+            }
+        }),
         "lot_help" => tool_ok(&lot_core::help_spec()),
         "lot_version" => match serde_json::to_value(&lot_core::version_info()) {
             Ok(v) => tool_ok(&v),
@@ -1671,6 +1801,12 @@ mod tests {
             "lot_stems_soundtrack",
             "lot_stems_vo",
             "lot_doctor",
+            "lot_plugin_list",
+            "lot_plugin_call",
+            "lot_school_get",
+            "lot_school_set",
+            "lot_school_score",
+            "lot_school_exam",
         ] {
             assert!(names.contains(&n), "missing {n} in {names:?}");
         }

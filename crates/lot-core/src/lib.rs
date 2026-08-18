@@ -1,5 +1,8 @@
 use serde::{Deserialize, Serialize};
 
+#[cfg(test)]
+pub static TEST_ENV: std::sync::Mutex<()> = std::sync::Mutex::new(());
+
 pub const VERSION: &str = env!("CARGO_PKG_VERSION");
 pub const NAME: &str = "lot";
 pub const SHOW_SCHEMA: u32 = 1;
@@ -25,7 +28,9 @@ mod model;
 mod motion;
 mod packs;
 mod parse;
+mod plugin;
 mod resource;
+mod school;
 mod show;
 mod slate;
 mod snapshot;
@@ -66,7 +71,11 @@ pub use model::{
     Beat, FinishState, MediaItem, Scene, Shot, SlateLora, SlateState, StageMark, Take,
 };
 pub use motion::{motion_analyze, motion_export, motion_marks, motion_plate};
+pub use plugin::{plugin_call, plugin_list, PluginInfo, PluginManifest};
 pub use resource::{resource_list, resource_read, ResourceRef};
+pub use school::{
+    school_exam, school_get, school_score, school_set, ExamReport, Score, ScoreReport,
+};
 pub use show::{
     create_show, current_show_path, draft_screenplay, lock_writer, open_show, read_show,
     replace_cast, replace_cast_json, require_current, revise_screenplay, set_brief,
@@ -135,11 +144,22 @@ pub struct MediaGap {
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct SchoolStatus {
     pub enabled: bool,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub path: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub level: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub help: Option<String>,
 }
 
 impl Default for SchoolStatus {
     fn default() -> Self {
-        Self { enabled: false }
+        Self {
+            enabled: false,
+            path: None,
+            level: None,
+            help: None,
+        }
     }
 }
 
