@@ -1,7 +1,7 @@
 ---
 name: film-lot
 description: "Use when Lot, lot mcp, or show.lot. Filmmaker loop on lot mcp. Lot code goes to coder."
-version: 1.2.0
+version: 1.2.1
 license: MIT
 platforms: [windows, macos, linux]
 metadata:
@@ -29,7 +29,7 @@ Home: `C:\Users\thcab\lot` — **not** `video-buddy-suite`.
 
 Do not start Tauri or installers from this skill. Do not port Wasserman Electron.
 
-Humans may open `lot-ui` (`cargo run -p lot-ui`). Filmmaker agents still use `lot mcp`.
+Humans may open `lot-ui` (`cargo run -p lot-ui`) and confirm Writer (brief / style / cast / draft / revise) in that window. Filmmaker agents still use `lot mcp`.
 
 ## Door
 

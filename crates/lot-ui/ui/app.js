@@ -108,6 +108,86 @@ function renderEvent(ev) {
   eventEl.append("last  ", kind, "  ·  ", ev.who || "human", "  ·  rev ", String(ev.rev ?? ""));
 }
 
+function opt(el) {
+  const v = el && el.value ? el.value.trim() : "";
+  return v || null;
+}
+
+function joinList(items) {
+  return (items || []).filter(Boolean).join("  ·  ");
+}
+
+function renderWriter(writer) {
+  const w = writer || {};
+  const briefNow = document.getElementById("brief-now");
+  const brief = (w.brief || "").trim();
+  briefNow.textContent = brief || "no brief";
+  briefNow.classList.toggle("empty", !brief);
+  const briefText = document.getElementById("brief-text");
+  if (briefText && briefText !== document.activeElement) {
+    briefText.value = w.brief || "";
+  }
+
+  const styleBits = [
+    joinList(w.genres),
+    joinList(w.styles_living),
+    joinList(w.styles_canon),
+    w.format || "",
+  ].filter(Boolean);
+  const styleNow = document.getElementById("style-now");
+  styleNow.textContent = styleBits.length ? styleBits.join("  ·  ") : "no style";
+  const formatEl = document.getElementById("style-format");
+  if (formatEl && formatEl !== document.activeElement) {
+    formatEl.value = w.format || "";
+  }
+
+  const castNow = document.getElementById("cast-now");
+  castNow.replaceChildren();
+  for (const member of w.cast || []) {
+    if (!member || !member.name) continue;
+    const li = document.createElement("li");
+    li.append(member.name);
+    if (member.function) {
+      const fn = document.createElement("span");
+      fn.className = "fn";
+      fn.textContent = member.function;
+      li.append(fn);
+    }
+    castNow.appendChild(li);
+  }
+
+  const draftNow = document.getElementById("draft-now");
+  const path = w.draft_path || "";
+  const leaf = path.split(/[/\\]/).filter(Boolean).pop() || "";
+  const bits = [];
+  if (leaf) bits.push(leaf);
+  else bits.push("no draft");
+  bits.push(w.locked ? "locked" : "open");
+  const prov = w.draft_provenance;
+  if (prov && (prov.backend || prov.model)) {
+    bits.push([prov.backend, prov.model].filter(Boolean).join(" "));
+  }
+  draftNow.textContent = bits.join("  ·  ");
+}
+
+function renderTheory(payload, schoolOn) {
+  const theoryEl = document.getElementById("theory");
+  if (!schoolOn || !payload || !payload.theory) {
+    theoryEl.hidden = true;
+    theoryEl.textContent = "";
+    return;
+  }
+  const t = payload.theory;
+  const line = [t.apply, t.rule].find((s) => s && String(s).trim());
+  if (!line) {
+    theoryEl.hidden = true;
+    theoryEl.textContent = "";
+    return;
+  }
+  theoryEl.hidden = false;
+  theoryEl.textContent = line;
+}
+
 function render(st) {
   if (!st || st.ok === false) {
     showNotice((st && st.error) || "no show —");
@@ -115,12 +195,15 @@ function render(st) {
     showNotice("");
   }
   const hasShow = !!(st && st.show);
+  const firstOpen = hasShow && bayEl.hidden;
   emptyEl.hidden = hasShow;
   bayEl.hidden = !hasShow;
   if (hasShow) {
-    bayEl.classList.remove("rise");
-    void bayEl.offsetWidth;
-    bayEl.classList.add("rise");
+    if (firstOpen) {
+      bayEl.classList.remove("rise");
+      void bayEl.offsetWidth;
+      bayEl.classList.add("rise");
+    }
     document.getElementById("show-name").textContent = st.show_name || "untitled";
     const lock = st.locked_by ? `locked · ${st.locked_by}` : "open";
     document.getElementById("show-meta").textContent = [
@@ -133,8 +216,13 @@ function render(st) {
       .join("  ·  ");
     renderRail(st);
     renderEvent(st.last_event);
+    renderWriter(st.writer);
+    document.getElementById("desk").hidden = (st.phase || "writer") !== "writer";
   }
   renderSchool(st && st.school);
+  if (!(st && st.school && st.school.enabled)) {
+    renderTheory(null, false);
+  }
 }
 
 async function refresh() {
@@ -194,5 +282,55 @@ gateEl.querySelector("[data-act=open]").addEventListener("click", () => {
 });
 
 schoolOnEl.addEventListener("change", onSchoolToggle);
+
+async function confirmWriter(act) {
+  let out;
+  if (act === "brief") {
+    out = await invoke("writer_brief", {
+      text: document.getElementById("brief-text").value,
+    });
+  } else if (act === "style") {
+    out = await invoke("writer_style", {
+      genre: opt(document.getElementById("style-genre")),
+      living: opt(document.getElementById("style-living")),
+      canon: opt(document.getElementById("style-canon")),
+      format: opt(document.getElementById("style-format")),
+    });
+  } else if (act === "cast") {
+    out = await invoke("writer_cast", {
+      name: opt(document.getElementById("cast-name")),
+      function: opt(document.getElementById("cast-function")),
+      look: opt(document.getElementById("cast-look")),
+      must_not: opt(document.getElementById("cast-must-not")),
+    });
+  } else if (act === "draft") {
+    document.getElementById("draft-now").textContent = "drafting…";
+    out = await invoke("writer_draft");
+  } else if (act === "revise") {
+    const notes = document.getElementById("revise-notes").value;
+    document.getElementById("draft-now").textContent = "revising…";
+    out = await invoke("writer_revise", { notes });
+  } else if (act === "lock") {
+    out = await invoke("writer_lock");
+  } else if (act === "unlock") {
+    out = await invoke("writer_unlock");
+  } else {
+    return;
+  }
+  if (!out.ok) {
+    showNotice(out.error || "writer —");
+    await refresh();
+    return;
+  }
+  showNotice("");
+  await refresh();
+  renderTheory(out, !!(out.school && out.school.enabled));
+}
+
+document.getElementById("desk").addEventListener("click", (e) => {
+  const btn = e.target.closest("[data-writer]");
+  if (!btn) return;
+  confirmWriter(btn.getAttribute("data-writer"));
+});
 
 refresh();

@@ -36,6 +36,84 @@
         <p id="show-meta"></p>
         <ol id="rail"></ol>
         <p id="event" hidden></p>
+
+        <section id="desk">
+          <p id="brief-now"></p>
+          <label class="field">
+            Brief
+            <textarea id="brief-text" rows="3" spellcheck="true" placeholder="what happens"></textarea>
+          </label>
+          <div class="actions">
+            <button type="button" data-writer="brief">Confirm brief</button>
+          </div>
+
+          <p id="style-now" class="quiet"></p>
+          <div class="row">
+            <label class="field">
+              Genre
+              <input id="style-genre" type="text" spellcheck="false" placeholder="drama" />
+            </label>
+            <label class="field">
+              Living
+              <input id="style-living" type="text" spellcheck="false" placeholder="greta-gerwig" />
+            </label>
+            <label class="field">
+              Canon
+              <input id="style-canon" type="text" spellcheck="false" placeholder="akira-kurosawa" />
+            </label>
+            <label class="field">
+              Format
+              <select id="style-format">
+                <option value="">—</option>
+                <option value="feature">feature</option>
+                <option value="30min">30min</option>
+                <option value="15s">15s</option>
+                <option value="episodic">episodic</option>
+                <option value="advertisement">advertisement</option>
+                <option value="music-video">music-video</option>
+              </select>
+            </label>
+          </div>
+          <div class="actions">
+            <button type="button" data-writer="style">Confirm style</button>
+          </div>
+
+          <ul id="cast-now"></ul>
+          <div class="row">
+            <label class="field">
+              Name
+              <input id="cast-name" type="text" spellcheck="false" placeholder="Ada" />
+            </label>
+            <label class="field">
+              Function
+              <input id="cast-function" type="text" spellcheck="false" placeholder="lead" />
+            </label>
+            <label class="field">
+              Look
+              <input id="cast-look" type="text" spellcheck="false" />
+            </label>
+            <label class="field">
+              Must not
+              <input id="cast-must-not" type="text" spellcheck="false" />
+            </label>
+          </div>
+          <div class="actions">
+            <button type="button" data-writer="cast">Confirm cast</button>
+          </div>
+
+          <p id="draft-now" class="quiet"></p>
+          <label class="field">
+            Revise
+            <textarea id="revise-notes" rows="2" spellcheck="true" placeholder="notes"></textarea>
+          </label>
+          <div class="actions">
+            <button type="button" data-writer="draft">Draft</button>
+            <button type="button" data-writer="revise">Revise</button>
+            <button type="button" data-writer="lock">Lock</button>
+            <button type="button" data-writer="unlock">Unlock</button>
+          </div>
+          <p id="theory" hidden></p>
+        </section>
       </section>
 
       <aside id="school" data-on="false">

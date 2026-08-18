@@ -57,7 +57,7 @@ Hermes:
 
 Skill: `skills/film-lot/SKILL.md`.
 
-Humans may open the film-bay window: `cargo run -p lot-ui`. Agents still use `lot mcp`. No folder dialog. Do not start Phase 6 installers.
+Humans may open the film-bay window: `cargo run -p lot-ui`. Same window confirms Writer (brief / style / cast / draft / revise). Agents still use `lot mcp`. No folder dialog. Do not start Phase 6 installers.
 
 No TTY prompts. Flags only. Exit 0 = ok. A show is a directory with `show.json` + `events.jsonl` + `media/`.
 
