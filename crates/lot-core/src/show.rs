@@ -443,11 +443,33 @@ fn write_fountain(
 }
 
 pub(crate) fn write_show(dir: &Path, show: &Show) -> Result<(), ShowError> {
+    journal_previous(dir)?;
     let path = dir.join(SHOW_FILE);
     let tmp = dir.join(".show.json.tmp");
     let body = serde_json::to_string_pretty(show)?;
     fs::write(&tmp, body)?;
     fs::rename(&tmp, path)?;
+    Ok(())
+}
+
+/// Copy the live show (and fountain) to `journal/rev-{n}` before overwrite.
+fn journal_previous(dir: &Path) -> Result<(), ShowError> {
+    let path = dir.join(SHOW_FILE);
+    if !path.is_file() {
+        return Ok(());
+    }
+    let raw = fs::read_to_string(&path)?;
+    let old: Show = serde_json::from_str(&raw)?;
+    let dest = dir.join("journal").join(format!("rev-{}", old.rev));
+    if dest.join(SHOW_FILE).is_file() {
+        return Ok(());
+    }
+    fs::create_dir_all(&dest)?;
+    fs::copy(&path, dest.join(SHOW_FILE))?;
+    let fountain = dir.join(SCREENPLAY_FILE);
+    if fountain.is_file() {
+        fs::copy(&fountain, dest.join(SCREENPLAY_FILE))?;
+    }
     Ok(())
 }
 
@@ -750,10 +772,48 @@ mod tests {
         assert_ne!(show.shots[0].name, "01");
         assert_eq!(show.takes[0].shot_id, show.shots[0].id);
         crate::dailies_circle(&show.takes[0].id).unwrap();
-        let (_, _, xml) = crate::dailies_export().unwrap();
-        assert!(xml.is_file());
-        let body = fs::read_to_string(&xml).unwrap();
+        let (_, _, report) = crate::dailies_export().unwrap();
+        assert!(report.file.is_file());
+        assert!(!report.resumed);
+        let body = fs::read_to_string(&report.file).unwrap();
         assert!(body.contains("fcpxml"));
+        assert!(body.contains(r#"<format id="r1""#));
+        assert!(body.contains("file://"));
+        assert!(body.contains("media-rep"));
+    }
+
+    #[test]
+    fn cut_export_same_circled_takes_is_idempotent() {
+        let _g = ENV.lock().unwrap_or_else(|e| e.into_inner());
+        let (dir, _) = setup_show("CutIdempotent");
+        let fixture = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("fixtures/carnival.txt");
+        crate::breakdown_parse(Some(&fixture)).unwrap();
+        let clip = dir.join("media").join("01-foo.mp4");
+        fs::create_dir_all(clip.parent().unwrap()).unwrap();
+        fs::write(&clip, b"fake-mp4-bytes-cut-export").unwrap();
+        crate::dailies_ingest(Some(&clip), None).unwrap();
+        let take_id = read_show(&dir).unwrap().takes[0].id.clone();
+        crate::dailies_circle(&take_id).unwrap();
+        let first = crate::dailies_export().unwrap();
+        assert!(!first.2.resumed);
+        let xml = fs::read_to_string(&first.2.file).unwrap();
+        let events_after_first = fs::read_to_string(dir.join("events.jsonl")).unwrap();
+        let export_count = events_after_first
+            .lines()
+            .filter(|l| l.contains("\"dailies.export\""))
+            .count();
+        assert_eq!(export_count, 1);
+        let second = crate::dailies_export().unwrap();
+        assert!(second.2.resumed, "same circled takes must resume");
+        assert_eq!(second.2.file, first.2.file);
+        assert_eq!(fs::read_to_string(&second.2.file).unwrap(), xml);
+        let events_after_second = fs::read_to_string(dir.join("events.jsonl")).unwrap();
+        let export_count2 = events_after_second
+            .lines()
+            .filter(|l| l.contains("\"dailies.export\""))
+            .count();
+        assert_eq!(export_count2, 1, "resume must not append dailies.export");
+        assert_eq!(read_show(&dir).unwrap().rev, first.1.rev);
     }
 
     #[test]
@@ -1247,6 +1307,32 @@ mod tests {
         assert!(show.rev > rev);
         let err = crate::restore_show(9999).unwrap_err().to_string();
         assert!(err.contains("no snapshot"), "{err}");
+    }
+
+    #[test]
+    fn undo_last_event_restores_brief_without_snapshot() {
+        let _g = ENV.lock().unwrap_or_else(|e| e.into_inner());
+        let (dir, _) = setup_show("Undo");
+        let err = crate::undo_show().unwrap_err().to_string();
+        assert!(err.starts_with("nothing to undo"), "{err}");
+        crate::set_brief("Ada waits by the tent.").unwrap();
+        crate::set_brief("She puts it on.").unwrap();
+        assert_eq!(read_show(&dir).unwrap().writer.brief, "She puts it on.");
+        let (undo_dir, show, undid) = crate::undo_show().unwrap();
+        assert_eq!(undo_dir, dir);
+        assert_eq!(show.writer.brief, "Ada waits by the tent.");
+        assert!(undid.starts_with("ev-"), "{undid}");
+        let ev = crate::audit::last_event(&dir).expect("undo event");
+        assert_eq!(ev.kind, "show.undo");
+        let err = crate::undo_show().unwrap_err().to_string();
+        assert!(err.starts_with("nothing to undo"), "{err}");
+        crate::snapshot_show().unwrap();
+        crate::set_brief("third line").unwrap();
+        crate::undo_show().unwrap();
+        assert_eq!(
+            read_show(&dir).unwrap().writer.brief,
+            "Ada waits by the tent."
+        );
     }
 
     #[test]

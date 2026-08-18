@@ -32,6 +32,7 @@ mod snapshot;
 mod stage;
 mod stems;
 mod stills;
+mod undo;
 
 pub use agent::{clear_agent, current as current_agent, set_agent, with_agent};
 pub use audit::{export_log, last_event, mutation_json, show_log, EventMeta};
@@ -46,7 +47,7 @@ pub use cancel::{
     is_cancelled, request_cancel, run_interruptible, CANCELLED_MSG,
 };
 pub use caps::{active as active_caps, clear_caps, parse_caps, set_caps, with_caps, Cap, Caps};
-pub use dailies::{dailies_circle, dailies_export, dailies_ingest, IngestReport};
+pub use dailies::{dailies_circle, dailies_export, dailies_ingest, ExportReport, IngestReport};
 pub use detail::{
     clear_detail, detail_full, detail_full_active, detail_full_value, lean_extra, set_detail_full,
     with_detail,
@@ -78,6 +79,7 @@ pub use stems::{stems_soundtrack, stems_vo, Stems};
 pub use stills::{
     board_export, comfy_workflow_ready, resolve_comfy_workflow, stills_describe, stills_generate,
 };
+pub use undo::undo_show;
 
 /// Kernel status — CLI `--json` and MCP `lot_status` share this shape.
 #[derive(Debug, Serialize)]

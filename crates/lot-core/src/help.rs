@@ -30,6 +30,7 @@ pub fn help_spec() -> Value {
             verb("lot help --json", "lot_help", "kernel", "This spec. The binary is the contract."),
             verb("lot snapshot", "lot_snapshot", "kernel", "Freeze show.json + fountain at the current rev."),
             verb("lot restore --rev", "lot_restore", "kernel", "Restore a snapshot. Later drafts do not eat earlier ones."),
+            verb("lot undo", "lot_undo", "kernel", "Undo the last mutation from the event log. No prior snapshot. Create-only or already undone → nothing to undo —."),
             verb("lot writer brief --text", "lot_writer_brief", "writer", "Set the brief."),
             verb("lot writer style --genre --living --canon --format", "lot_writer_style", "writer", "Dated packs. Influence, not endorsement."),
             verb("lot writer cast --name", "lot_writer_cast", "writer", "Add/update a character or replace via --from-json."),
@@ -57,11 +58,11 @@ pub fn help_spec() -> Value {
             verb("lot slate lora --id --weight --model", "lot_slate_lora", "slate", "LoRA metadata on a shot or the show."),
             verb("lot dailies ingest --file", "lot_dailies_ingest", "dailies", "01-foo.mp4 binds to shot 01 without renaming it. Same file or sha256 resumes; no duplicate take. Crash mid-copy leaves a .part and retries."),
             verb("lot dailies circle --take", "lot_dailies_circle", "dailies", "Requires --take. No GUI. Already circled is a no-op."),
-            verb("lot dailies export", "lot_dailies_export", "dailies", "FCPXML of circled takes."),
+            verb("lot dailies export", "lot_dailies_export", "dailies", "FCPXML 1.9 of circled takes (format + file:// URLs). Same XML is a no-op."),
             verb("lot stems soundtrack --brief", "lot_stems_soundtrack", "stems", "Cue sheet. --generate needs LOT_SOUNDTRACK_CMD. Never a silent stub."),
             verb("lot stems vo --text --generate", "lot_stems_vo", "stems", "SAPI / piper / espeak / say, or --file."),
             verb("lot finish --upscale --fps", "lot_finish", "cut", "Optional pickup. ffmpeg or LOT_UPSCALE_CMD. No stub. MCP cancel kills the child and writes no file."),
-            verb("lot cut export", "lot_cut_export", "cut", "Same FCPXML interchange."),
+            verb("lot cut export", "lot_cut_export", "cut", "Same FCPXML interchange. Same circled takes is a no-op."),
             verb("lot mcp", "", "kernel", "NDJSON JSON-RPC 2.0 on stdin/stdout.")
         ]
     })
@@ -93,6 +94,7 @@ mod tests {
             "lot_stage_place",
             "lot_snapshot",
             "lot_restore",
+            "lot_undo",
             "lot_help",
             "lot_lock",
             "lot_unlock",
