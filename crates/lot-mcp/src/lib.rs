@@ -519,7 +519,7 @@ fn tools() -> Value {
         },
         {
             "name": "lot_dailies_export",
-            "description": "Export circled takes as FCPXML 1.9 (format + file:// URLs). Same circled takes is a no-op.",
+            "description": "Export circled takes as FCPXML 1.9 and CMX 3600 EDL. Same circled takes is a no-op.",
             "inputSchema": {
                 "type": "object",
                 "properties": { "path": path_prop() }
@@ -527,7 +527,7 @@ fn tools() -> Value {
         },
         {
             "name": "lot_cut_export",
-            "description": "Cut interchange: same FCPXML as dailies export. Same circled takes is a no-op. Resolve live is an adapter later.",
+            "description": "Cut interchange: FCPXML 1.9 + CMX 3600 EDL. Same circled takes is a no-op. Resolve live is an adapter later.",
             "inputSchema": {
                 "type": "object",
                 "properties": { "path": path_prop() }
@@ -1213,6 +1213,7 @@ fn dispatch(name: &str, args: &Value) -> Value {
                     &show,
                     json!({
                         "export": report.file.display().to_string(),
+                        "edl": report.edl.display().to_string(),
                         "takes": report.takes,
                         "resumed": report.resumed
                     }),
@@ -1992,9 +1993,13 @@ mod tests {
         assert_eq!(first["resumed"], false);
         assert_eq!(first["takes"], 1);
         let export = first["export"].as_str().unwrap().to_string();
+        let edl_path = first["edl"].as_str().unwrap().to_string();
         let xml = std::fs::read_to_string(&export).unwrap();
         assert!(xml.contains(r#"<format id="r1""#));
         assert!(xml.contains("file://"));
+        let edl = std::fs::read_to_string(&edl_path).unwrap();
+        assert!(edl.contains("FCM: NON-DROP FRAME"));
+        assert!(edl.contains("* FROM CLIP NAME: 01-foo.mp4"));
         let events_after_first = std::fs::read_to_string(show_dir.join("events.jsonl")).unwrap();
         let export_count = events_after_first
             .lines()
@@ -2007,6 +2012,7 @@ mod tests {
         );
         assert_eq!(second["resumed"], true);
         assert_eq!(second["export"], export);
+        assert_eq!(second["edl"], edl_path);
         let events_after_second = std::fs::read_to_string(show_dir.join("events.jsonl")).unwrap();
         let export_count2 = events_after_second
             .lines()
