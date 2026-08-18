@@ -5,7 +5,7 @@ Agent-first film tools. **Stdio first, GUI last.**
 - CLI: `lot status --json` · `lot help --json` · `lot show` · `lot import` · `lot writer` · `lot breakdown` · `lot stage` · `lot stills` · `lot board` · `lot slate` · `lot motion` · `lot dailies` · `lot stems` · `lot finish` · `lot snapshot` · `lot lock` · `lot budget` · `lot log` · `lot handoff`
 - MCP: `lot mcp`
 - Doctor: `lot doctor --json`
-- HTTP twin (later): `lot serve`
+- HTTP twin (optional): `lot serve [--bind 127.0.0.1:8787]` — `GET /openapi.json` · `POST /lot_status` (same names as MCP)
 - Hermes skill: `skills/film-lot/SKILL.md` (MCP `lot` → `target/debug/lot.exe mcp`; Flux stills pack when `LOT_COMFY_WORKFLOW` is unset)
 
 Not Hardline. Not Pixie. Not a Wasserman re-skin. One kernel; old suite apps are adapters.

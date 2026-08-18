@@ -16,6 +16,7 @@ lot doctor --json
 lot version --json
 lot upgrade --check --json
 lot mcp
+lot serve --bind 127.0.0.1:8787 --json
 ```
 
 `lot version --json` / `lot_version` is name + crate version (no show). `lot upgrade --check` / `lot_upgrade` `{check:true}` compares to `LOT_UPGRADE_URL` (JSON `version`/`latest` or a one-line version). Never downloads. Unset channel → `no upgrade channel —`. Missing `--check` → `no upgrade — use --check`.
@@ -30,7 +31,7 @@ Jail = this `show.lot` tree + `LOT_MEDIA_ROOTS` (`;` on Windows, `:` else). Othe
 
 Show budget: `lot budget --spend N --render N` (or `--clear-spend` / `--clear-render`). Hit cap → stop. Unset = unlimited. Agent caps are separate; the show itself now has a budget. Spend counts Grok stills. Render counts Comfy stills and `finish --upscale`.
 
-`lot mcp` is NDJSON JSON-RPC 2.0 on stdin/stdout. Tools:
+`lot mcp` is NDJSON JSON-RPC 2.0 on stdin/stdout — the native agent door. `lot serve [--bind]` is an optional HTTP/OpenAPI twin (default `127.0.0.1:8787`). Same tool names: `POST /lot_status`, `GET /openapi.json`. Not required. Bind fails → `no serve —` and no silent listen. Tools:
 
 - `lot_status`, `lot_create`, `lot_open`, `lot_doctor`, `lot_help`, `lot_version`, `lot_upgrade`, `lot_snapshot`, `lot_restore`, `lot_undo`, `lot_lock`, `lot_unlock`, `lot_budget`, `lot_log`, `lot_handoff`
 - `lot_show`, `lot_scene`, `lot_shot`, `lot_take`, `lot_import`

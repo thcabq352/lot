@@ -2,9 +2,7 @@
 //! Pose / depth / OpenPose stay in Motion Previs Studio. Never a fake bundle.
 
 use crate::model::{shot_nums_match, MediaItem};
-use crate::show::{
-    append_event, append_event_with, bump, write_show, Show, ShowError,
-};
+use crate::show::{append_event, append_event_with, bump, write_show, Show, ShowError};
 use serde_json::json;
 use std::fs;
 use std::path::{Path, PathBuf};

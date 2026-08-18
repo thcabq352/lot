@@ -69,9 +69,8 @@ fn enclosing_show(path: &Path) -> Option<PathBuf> {
 }
 
 fn canon(p: &Path) -> PathBuf {
-    std::fs::canonicalize(p).unwrap_or_else(|_| {
-        std::path::absolute(p).unwrap_or_else(|_| p.to_path_buf())
-    })
+    std::fs::canonicalize(p)
+        .unwrap_or_else(|_| std::path::absolute(p).unwrap_or_else(|_| p.to_path_buf()))
 }
 
 fn is_under(child: &Path, root: &Path) -> bool {

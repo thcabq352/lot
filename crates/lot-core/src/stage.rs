@@ -1,9 +1,7 @@
 //! Stage: 2D floor marks + camera card. 3D blocking stays in Blockout.
 
 use crate::model::{shot_nums_match, StageMark};
-use crate::show::{
-    append_event, append_event_with, bump, write_show, Show, ShowError,
-};
+use crate::show::{append_event, append_event_with, bump, write_show, Show, ShowError};
 use serde_json::json;
 use std::fs;
 use std::path::PathBuf;

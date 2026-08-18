@@ -6,7 +6,7 @@ pub fn help_spec() -> Value {
     json!({
         "name": crate::NAME,
         "version": crate::VERSION,
-        "door": ["cli", "mcp"],
+        "door": ["cli", "mcp", "http"],
         "school_default": "off",
         "notice": "Flags only. No TTY prompts. Exit 0 = ok. Do not click folder dialogs. --agent / LOT_AGENT / MCP agent: who writes (unset = human, no auto-claim). --cap / LOT_CAP / MCP cap: read|write|render|export|spend (unset = all). --detail full / MCP detail=full dumps shot prompts and cards; default --json is lean (ids, counts, media path+sha256+duration). Jail = this show.lot + LOT_MEDIA_ROOTS; fountain is scene text (AC-013). Show budget: lot budget --spend/--render (hit cap → stop). MCP notifications/cancelled stops stills generate, finish, and draft (cancelled —; no fake PNG/wav/fountain). lot status --json includes dirty, missing, missing_media.",
         "verbs": [
@@ -65,7 +65,8 @@ pub fn help_spec() -> Value {
             verb("lot stems vo --text --generate", "lot_stems_vo", "stems", "SAPI / piper / espeak / say, or --file."),
             verb("lot finish --upscale --fps", "lot_finish", "cut", "Optional pickup. ffmpeg or LOT_UPSCALE_CMD. No stub. MCP cancel kills the child and writes no file."),
             verb("lot cut export", "lot_cut_export", "cut", "Same FCPXML + EDL interchange. Same circled takes is a no-op."),
-            verb("lot mcp", "", "kernel", "NDJSON JSON-RPC 2.0 on stdin/stdout.")
+            verb("lot mcp", "", "kernel", "NDJSON JSON-RPC 2.0 on stdin/stdout. Native agent door."),
+            verb("lot serve [--bind]", "", "kernel", "Optional HTTP/OpenAPI twin. Same tool names as MCP. Default 127.0.0.1:8787. Not required — lot mcp is the agent door.")
         ]
     })
 }
@@ -113,6 +114,26 @@ mod tests {
             assert!(mcps.contains(&n), "missing {n} in {mcps:?}");
         }
         assert_eq!(v["school_default"], "off");
+        let doors: Vec<&str> = v["door"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .filter_map(|x| x.as_str())
+            .collect();
+        assert!(
+            doors.contains(&"http"),
+            "door must list http twin {doors:?}"
+        );
+        let clis: Vec<&str> = v["verbs"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .filter_map(|x| x["cli"].as_str())
+            .collect();
+        assert!(
+            clis.iter().any(|c| c.starts_with("lot serve")),
+            "missing lot serve in {clis:?}"
+        );
         assert!(
             v["notice"].as_str().unwrap().contains("detail=full"),
             "help notice must name detail=full"

@@ -2,9 +2,7 @@
 //! Never write a fake song or a silent WAV and call it a score.
 
 use crate::model::MediaItem;
-use crate::show::{
-    append_event_with, bump, write_show, Show, ShowError,
-};
+use crate::show::{append_event_with, bump, write_show, Show, ShowError};
 use crate::Provenance;
 use serde::{Deserialize, Serialize};
 use std::fs;
@@ -166,9 +164,8 @@ pub fn stems_vo(
             .join(p.file_name().and_then(|s| s.to_str()).unwrap_or("vo.wav"));
         fs::copy(p, &dest)?;
         show.stems.vo_path = Some(dest.display().to_string());
-        show.stems.vo_provenance = Some(
-            Provenance::new("file", "attach", "", "local").with_prompt(&show.stems.vo_text),
-        );
+        show.stems.vo_provenance =
+            Some(Provenance::new("file", "attach", "", "local").with_prompt(&show.stems.vo_text));
     }
 
     if generate {

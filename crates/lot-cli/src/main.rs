@@ -198,6 +198,11 @@ enum Cmd {
     Doctor,
     /// Native agent door (stdio MCP).
     Mcp,
+    /// Optional HTTP/OpenAPI twin. Same tool names. Default 127.0.0.1:8787.
+    Serve {
+        #[arg(long)]
+        bind: Option<String>,
+    },
 }
 
 #[derive(Subcommand)]
@@ -1156,6 +1161,35 @@ fn main() -> ExitCode {
                 ExitCode::from(1)
             }
         },
+        Cmd::Serve { bind } => {
+            if let Some(code) = apply_show(cli.show.as_deref(), cli.json) {
+                return code;
+            }
+            let addr = lot_mcp::resolve_bind(bind.as_deref());
+            match lot_mcp::serve_start(&addr) {
+                Ok((listener, actual)) => {
+                    if cli.json {
+                        println!(
+                            "{}",
+                            serde_json::json!({
+                                "ok": true,
+                                "door": "http",
+                                "bind": actual,
+                                "openapi": "/openapi.json"
+                            })
+                        );
+                    } else {
+                        println!("lot serve {actual} — GET /openapi.json  POST /lot_status");
+                    }
+                    let _ = std::io::Write::flush(&mut std::io::stdout());
+                    match lot_mcp::run_listener(listener) {
+                        Ok(()) => ExitCode::SUCCESS,
+                        Err(e) => fail(cli.json, &format!("no serve — {e}")),
+                    }
+                }
+                Err(e) => fail(cli.json, &format!("no serve — {e}")),
+            }
+        }
     }
 }
 

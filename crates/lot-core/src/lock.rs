@@ -9,7 +9,10 @@ pub enum LockCheck {
 
 pub fn check(show: &Show) -> Result<LockCheck, ShowError> {
     let me = crate::agent::current();
-    match (show.locked_by.as_deref().and_then(crate::agent::normalize), me) {
+    match (
+        show.locked_by.as_deref().and_then(crate::agent::normalize),
+        me,
+    ) {
         (Some(holder), Some(id)) if crate::agent::same(&holder, &id) => Ok(LockCheck::Ok),
         (Some(holder), _) => Err(ShowError::Msg(format!(
             "locked_by: {holder} — did not write"

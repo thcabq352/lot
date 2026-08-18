@@ -4,9 +4,7 @@ use crate::model::{
     filename_shot_prefix, shot_num_from_scene, shot_nums_match, Beat, Shot, SlateLora, StageMark,
     Take,
 };
-use crate::show::{
-    append_event_with, bump, require_write_current, write_show, Show, ShowError,
-};
+use crate::show::{append_event_with, bump, require_write_current, write_show, Show, ShowError};
 use serde::Serialize;
 use serde_json::{json, Value};
 use std::fs;
@@ -114,8 +112,7 @@ pub fn detect(filename: &str, raw: &str) -> String {
         if let Some(app) = v.get("app").and_then(|a| a.as_str()) {
             return kind_from_app(app);
         }
-        if v.get("state").and_then(|s| s.get("scenes")).is_some() || raw.contains("scriptbreak")
-        {
+        if v.get("state").and_then(|s| s.get("scenes")).is_some() || raw.contains("scriptbreak") {
             return "scriptbreak".into();
         }
         if v.get("cards").is_some() || v.get("beats").is_some() {
@@ -167,9 +164,8 @@ fn keep_copy(dir: &Path, src: &Path, name: &str) -> Result<(), ShowError> {
 }
 
 fn import_wall(show: &mut Show, v: &Value) -> Result<Value, ShowError> {
-    let arr = first_array(v, &["cards", "beats", "items"]).ok_or_else(|| {
-        ShowError::Msg("cork-board has no cards — did not invent beats".into())
-    })?;
+    let arr = first_array(v, &["cards", "beats", "items"])
+        .ok_or_else(|| ShowError::Msg("cork-board has no cards — did not invent beats".into()))?;
     let mut n = 0u32;
     for card in arr {
         let text = first_str(card, &["text", "title", "body", "note", "beat"]);
@@ -197,9 +193,8 @@ fn import_wall(show: &mut Show, v: &Value) -> Result<Value, ShowError> {
 }
 
 fn import_canvas(show: &mut Show, v: &Value) -> Result<Value, ShowError> {
-    let arr = first_array(v, &["shots", "cards", "items"]).ok_or_else(|| {
-        ShowError::Msg("canvas has no shots — did not invent cards".into())
-    })?;
+    let arr = first_array(v, &["shots", "cards", "items"])
+        .ok_or_else(|| ShowError::Msg("canvas has no shots — did not invent cards".into()))?;
     let mut n = 0u32;
     for row in arr {
         let num = shot_num_of(row, show.shots.len());
@@ -261,7 +256,11 @@ fn import_blockout(show: &mut Show, v: &Value) -> Result<Value, ShowError> {
             }
         }
     }
-    if marks == 0 && !show.shots.iter().any(|s| !s.stage_marks.is_empty() || !s.size.is_empty())
+    if marks == 0
+        && !show
+            .shots
+            .iter()
+            .any(|s| !s.stage_marks.is_empty() || !s.size.is_empty())
     {
         return Err(ShowError::Msg(
             "no 2D marks — Blockout 3D stays in Blockout. Did not invent glTF.".into(),
@@ -277,9 +276,8 @@ fn import_sbref(
     show: &mut Show,
     v: &Value,
 ) -> Result<Value, ShowError> {
-    let arr = first_array(v, &["shots", "boards", "stills", "items"]).ok_or_else(|| {
-        ShowError::Msg("sbref has no boards — did not invent a still".into())
-    })?;
+    let arr = first_array(v, &["shots", "boards", "stills", "items"])
+        .ok_or_else(|| ShowError::Msg("sbref has no boards — did not invent a still".into()))?;
     let mut n = 0u32;
     for row in arr {
         let num = shot_num_of(row, show.shots.len());
@@ -319,9 +317,8 @@ fn import_slate(show: &mut Show, v: &Value) -> Result<Value, ShowError> {
     {
         show.slate.default_target = Some(t.to_string());
     }
-    let arr = first_array(v, &["shots", "items"]).ok_or_else(|| {
-        ShowError::Msg("slate has no shots — did not invent a prompt".into())
-    })?;
+    let arr = first_array(v, &["shots", "items"])
+        .ok_or_else(|| ShowError::Msg("slate has no shots — did not invent a prompt".into()))?;
     let mut n = 0u32;
     for row in arr {
         let num = shot_num_of(row, show.shots.len());
@@ -373,9 +370,8 @@ fn import_slate(show: &mut Show, v: &Value) -> Result<Value, ShowError> {
 }
 
 fn import_ctake(src: &Path, show: &mut Show, v: &Value) -> Result<Value, ShowError> {
-    let arr = first_array(v, &["takes", "clips", "items"]).ok_or_else(|| {
-        ShowError::Msg("ctake has no takes — did not invent a clip".into())
-    })?;
+    let arr = first_array(v, &["takes", "clips", "items"])
+        .ok_or_else(|| ShowError::Msg("ctake has no takes — did not invent a clip".into()))?;
     let mut n = 0u32;
     for row in arr {
         let filename = {
@@ -418,8 +414,7 @@ fn import_ctake(src: &Path, show: &mut Show, v: &Value) -> Result<Value, ShowErr
             .unwrap_or_else(|| first_str(row, &["path", "file"]));
         let sha = first_str(row, &["sha256", "sha"]);
         if show.takes.iter().any(|t| {
-            (!sha.is_empty() && t.sha256 == sha)
-                || (t.filename == filename && t.path == path)
+            (!sha.is_empty() && t.sha256 == sha) || (t.filename == filename && t.path == path)
         }) {
             continue;
         }
@@ -454,11 +449,7 @@ fn import_ctake(src: &Path, show: &mut Show, v: &Value) -> Result<Value, ShowErr
 }
 
 fn upsert_shot<'a>(show: &'a mut Show, num: &str) -> &'a mut Shot {
-    if let Some(i) = show
-        .shots
-        .iter()
-        .position(|s| shot_nums_match(&s.num, num))
-    {
+    if let Some(i) = show.shots.iter().position(|s| shot_nums_match(&s.num, num)) {
         return &mut show.shots[i];
     }
     let i = show.shots.len();
@@ -512,7 +503,10 @@ fn push_one_mark(shot: &mut Shot, m: &Value) -> bool {
     let mark = first_str(m, &["mark", "label"]);
     let x = first_str(m, &["x"]);
     let z = first_str(m, &["z"]);
-    if shot.stage_marks.iter().any(|s| s.who == who && s.mark == mark && s.x == x && s.z == z)
+    if shot
+        .stage_marks
+        .iter()
+        .any(|s| s.who == who && s.mark == mark && s.x == x && s.z == z)
     {
         return false;
     }
@@ -629,7 +623,10 @@ mod tests {
             "slate"
         );
         assert_eq!(
-            detect("wall.json", r#"{"app":"cork-board","cards":[{"text":"a"}]}"#),
+            detect(
+                "wall.json",
+                r#"{"app":"cork-board","cards":[{"text":"a"}]}"#
+            ),
             "cork-board"
         );
     }

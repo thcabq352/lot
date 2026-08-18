@@ -1,5 +1,12 @@
 #![recursion_limit = "512"]
 
+mod serve;
+
+pub use serve::{
+    default_bind, handle_connection, handle_http, openapi_spec, resolve_bind, run_http,
+    run_listener, serve_start, HttpOut,
+};
+
 use serde_json::{json, Value};
 use std::cell::RefCell;
 use std::io::{self, BufRead, Write};
@@ -1592,6 +1599,7 @@ fn err(id: Option<Value>, code: i64, message: &str) -> Value {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use std::io::{Read, Write};
     use std::sync::Mutex;
 
     static ENV_LOCK: Mutex<()> = Mutex::new(());
@@ -2344,5 +2352,148 @@ mod tests {
         assert_eq!(raw["result"]["isError"], true, "{raw}");
         let text = raw["result"]["content"][0]["text"].as_str().unwrap();
         assert!(text.starts_with("nothing to undo"), "{text}");
+    }
+
+    #[test]
+    fn serve_default_bind_is_loopback() {
+        assert_eq!(default_bind(), "127.0.0.1:8787");
+        assert_eq!(resolve_bind(None), "127.0.0.1:8787");
+        assert_eq!(resolve_bind(Some("")), "127.0.0.1:8787");
+        assert_eq!(resolve_bind(Some("0.0.0.0:9000")), "0.0.0.0:9000");
+    }
+
+    #[test]
+    fn openapi_lists_same_tool_names_as_mcp() {
+        let spec = openapi_spec();
+        assert_eq!(spec["openapi"], "3.0.3");
+        assert_eq!(spec["info"]["title"], "lot");
+        assert_eq!(spec["info"]["version"], lot_core::VERSION);
+        let listed_msg = handle(&json!({"jsonrpc":"2.0","id":2,"method":"tools/list"})).unwrap();
+        let listed: Vec<&str> = listed_msg["result"]["tools"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .map(|t| t["name"].as_str().unwrap())
+            .collect();
+        let paths = spec["paths"].as_object().expect("paths");
+        assert!(paths.contains_key("/openapi.json"));
+        for name in listed {
+            let key = format!("/{name}");
+            assert!(
+                paths.contains_key(&key),
+                "openapi missing {key} in {:?}",
+                paths.keys().collect::<Vec<_>>()
+            );
+            assert!(
+                paths[&key].get("post").is_some(),
+                "{key} must be POST (same verb as MCP)"
+            );
+        }
+    }
+
+    #[test]
+    fn http_get_openapi_and_root() {
+        let spec = handle_http("GET", "/openapi.json", b"");
+        assert_eq!(spec.status, 200, "{}", spec.body);
+        assert_eq!(spec.body["openapi"], "3.0.3");
+        let root = handle_http("GET", "/", b"");
+        assert_eq!(root.status, 200, "{}", root.body);
+        assert_eq!(root.body["ok"], true);
+        assert_eq!(root.body["door"], "http");
+        assert_eq!(root.body["openapi"], "/openapi.json");
+    }
+
+    #[test]
+    fn http_post_status_same_verb() {
+        let r = handle_http("POST", "/lot_status", b"{}");
+        assert_eq!(r.status, 200, "{}", r.body);
+        assert_ne!(r.body["isError"], true, "{}", r.body);
+        let body = unwrap_http_tool(&r.body);
+        assert_eq!(body["name"], "lot");
+        assert_eq!(body["door"], "http");
+        assert!(body["dirty"].is_array(), "{body}");
+    }
+
+    #[test]
+    fn http_tools_prefix_and_unknown() {
+        let via_prefix = handle_http("POST", "/tools/lot_version", b"{}");
+        assert_eq!(via_prefix.status, 200, "{}", via_prefix.body);
+        let body = unwrap_http_tool(&via_prefix.body);
+        assert_eq!(body["ok"], true);
+        assert_eq!(body["name"], "lot");
+
+        let missing = handle_http("POST", "/lot_not_a_tool", b"{}");
+        assert_eq!(missing.status, 404, "{}", missing.body);
+        assert!(
+            missing.body["error"]
+                .as_str()
+                .unwrap_or("")
+                .contains("unknown tool —"),
+            "{}",
+            missing.body
+        );
+    }
+
+    #[test]
+    fn http_create_uses_same_envelope() {
+        let _g = ENV_LOCK.lock().unwrap_or_else(|e| e.into_inner());
+        let root = std::env::temp_dir().join(format!(
+            "lot-http-create-{}-{}",
+            std::process::id(),
+            std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .map(|d| d.as_nanos())
+                .unwrap_or(0)
+        ));
+        let _ = std::fs::remove_dir_all(&root);
+        std::fs::create_dir_all(&root).unwrap();
+        std::env::set_var("LOT_HOME", root.join("home"));
+        std::env::remove_var("LOT_SHOW");
+        lot_core::clear_caps();
+        lot_core::clear_agent();
+
+        let show_dir = root.join("show");
+        let payload = serde_json::to_vec(&json!({
+            "path": show_dir.display().to_string(),
+            "name": "HttpTwin"
+        }))
+        .unwrap();
+        let r = handle_http("POST", "/lot_create", &payload);
+        assert_eq!(r.status, 200, "{}", r.body);
+        let body = unwrap_http_tool(&r.body);
+        assert_mutation_envelope(&body);
+        assert_eq!(body["name"], "HttpTwin");
+    }
+
+    #[test]
+    fn http_listen_one_request() {
+        let listener = std::net::TcpListener::bind("127.0.0.1:0").unwrap();
+        let addr = listener.local_addr().unwrap();
+        let t = std::thread::spawn(move || {
+            let (mut stream, _) = listener.accept().unwrap();
+            handle_connection(&mut stream).unwrap();
+        });
+        let mut client = std::net::TcpStream::connect(addr).unwrap();
+        client
+            .write_all(
+                b"POST /lot_version HTTP/1.1\r\nHost: 127.0.0.1\r\nContent-Length: 2\r\n\r\n{}",
+            )
+            .unwrap();
+        let mut buf = Vec::new();
+        client.read_to_end(&mut buf).unwrap();
+        let raw = String::from_utf8_lossy(&buf);
+        assert!(raw.starts_with("HTTP/1.1 200"), "{raw}");
+        assert!(raw.contains("\"name\":\"lot\""), "{raw}");
+        t.join().unwrap();
+    }
+
+    fn unwrap_http_tool(body: &Value) -> Value {
+        if let Some(sc) = body.get("structuredContent") {
+            return sc.clone();
+        }
+        if let Some(text) = body["content"][0]["text"].as_str() {
+            return serde_json::from_str(text).unwrap_or_else(|_| body.clone());
+        }
+        body.clone()
     }
 }

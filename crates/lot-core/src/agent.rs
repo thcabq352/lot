@@ -19,9 +19,7 @@ pub fn current() -> Option<String> {
     if let Some(s) = OVERRIDE.with(|c| c.borrow().clone()) {
         return normalize(&s);
     }
-    std::env::var("LOT_AGENT")
-        .ok()
-        .and_then(|s| normalize(&s))
+    std::env::var("LOT_AGENT").ok().and_then(|s| normalize(&s))
 }
 
 pub fn same(a: &str, b: &str) -> bool {

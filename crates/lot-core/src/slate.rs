@@ -4,9 +4,7 @@
 use crate::brain::complete_chat;
 use crate::model::{shot_nums_match, SlateLora};
 use crate::packs::{self, lookup};
-use crate::show::{
-    append_event, append_event_with, bump, write_show, Show, ShowError,
-};
+use crate::show::{append_event, append_event_with, bump, write_show, Show, ShowError};
 use serde_json::{json, Value};
 use std::path::PathBuf;
 use std::time::Duration;

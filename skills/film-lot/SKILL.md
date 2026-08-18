@@ -35,6 +35,8 @@ Do not start Tauri or installers from this skill. Do not port Wasserman Electron
 lot mcp
 ```
 
+Optional HTTP twin (not the agent door): `lot serve --bind 127.0.0.1:8787`. `GET /openapi.json`. `POST /lot_status` (same names as MCP).
+
 Hermes:
 
 ```json

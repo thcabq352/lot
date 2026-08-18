@@ -1,8 +1,6 @@
 //! Per-show spend / render budget. Unset cap = unlimited. Hit cap → stop.
 
-use crate::show::{
-    append_event, bump, require_write_current, write_show, Show, ShowError,
-};
+use crate::show::{append_event, bump, require_write_current, write_show, Show, ShowError};
 use serde::{Deserialize, Serialize};
 
 #[derive(Debug, Clone, Default, Serialize, Deserialize, PartialEq, Eq)]
