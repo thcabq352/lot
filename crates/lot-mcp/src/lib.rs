@@ -725,6 +725,21 @@ fn tools() -> Value {
             "inputSchema": { "type": "object", "properties": {} }
         },
         {
+            "name": "lot_version",
+            "description": "Kernel name + version. No show required.",
+            "inputSchema": { "type": "object", "properties": {} }
+        },
+        {
+            "name": "lot_upgrade",
+            "description": "Check LOT_UPGRADE_URL. check=true only; never downloads. Unset channel → no upgrade channel —.",
+            "inputSchema": {
+                "type": "object",
+                "properties": {
+                    "check": { "type": "boolean" }
+                }
+            }
+        },
+        {
             "name": "lot_doctor",
             "description": "Probe ffmpeg, Comfy, Grok, Ollama (LLM + vision), VO TTS, soundtrack, prompt server, Motion Previs, Blockout, upscale.",
             "inputSchema": { "type": "object", "properties": {} }
@@ -738,7 +753,13 @@ fn decorate_mutating_tools(list: &mut Value) {
     let Some(arr) = list.as_array_mut() else {
         return;
     };
-    let skip = ["lot_status", "lot_help", "lot_doctor"];
+    let skip = [
+        "lot_status",
+        "lot_help",
+        "lot_version",
+        "lot_upgrade",
+        "lot_doctor",
+    ];
     let output_schema = json!({
         "type": "object",
         "properties": {
@@ -1404,6 +1425,24 @@ fn dispatch(name: &str, args: &Value) -> Value {
             }
         }),
         "lot_help" => tool_ok(&lot_core::help_spec()),
+        "lot_version" => match serde_json::to_value(&lot_core::version_info()) {
+            Ok(v) => tool_ok(&v),
+            Err(e) => tool_err(&e.to_string()),
+        },
+        "lot_upgrade" => {
+            let check = args.get("check").and_then(|v| v.as_bool()).unwrap_or(false);
+            if !check {
+                tool_err(lot_core::UPGRADE_NO_UPGRADE)
+            } else {
+                match lot_core::upgrade_check() {
+                    Ok(r) => match serde_json::to_value(&r) {
+                        Ok(v) => tool_ok(&v),
+                        Err(e) => tool_err(&e.to_string()),
+                    },
+                    Err(e) => tool_err(&e.to_string()),
+                }
+            }
+        }
         "lot_doctor" => {
             let d = lot_core::Doctor::probe();
             match serde_json::to_value(&d) {
@@ -1604,6 +1643,8 @@ mod tests {
             "lot_take",
             "lot_import",
             "lot_help",
+            "lot_version",
+            "lot_upgrade",
             "lot_stills_generate",
             "lot_stills_describe",
             "lot_board_export",
@@ -1641,6 +1682,58 @@ mod tests {
         assert!(body["dirty"].is_array(), "{body}");
         assert!(body["missing"].is_array(), "{body}");
         assert!(body["missing_media"].is_array(), "{body}");
+    }
+
+    #[test]
+    fn call_version() {
+        let body = call_body("lot_version", json!({}));
+        assert_eq!(body["ok"], true);
+        assert_eq!(body["name"], "lot");
+        assert!(
+            body["version"]
+                .as_str()
+                .map(|s| !s.is_empty())
+                .unwrap_or(false),
+            "{body}"
+        );
+    }
+
+    #[test]
+    fn upgrade_without_check_is_error() {
+        let r = handle(&json!({
+            "jsonrpc":"2.0","id":9,"method":"tools/call",
+            "params":{"name":"lot_upgrade","arguments":{}}
+        }))
+        .unwrap();
+        assert_eq!(r["result"]["isError"], true);
+        assert!(
+            r["result"]["content"][0]["text"]
+                .as_str()
+                .unwrap()
+                .contains("no upgrade —"),
+            "{}",
+            r["result"]["content"][0]["text"]
+        );
+    }
+
+    #[test]
+    fn upgrade_check_without_channel_is_error() {
+        let _g = ENV_LOCK.lock().unwrap_or_else(|e| e.into_inner());
+        std::env::remove_var("LOT_UPGRADE_URL");
+        let r = handle(&json!({
+            "jsonrpc":"2.0","id":9,"method":"tools/call",
+            "params":{"name":"lot_upgrade","arguments":{"check": true}}
+        }))
+        .unwrap();
+        assert_eq!(r["result"]["isError"], true);
+        assert!(
+            r["result"]["content"][0]["text"]
+                .as_str()
+                .unwrap()
+                .contains("no upgrade channel —"),
+            "{}",
+            r["result"]["content"][0]["text"]
+        );
     }
 
     #[test]

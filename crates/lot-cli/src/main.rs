@@ -7,7 +7,7 @@ use lot_core::{
     revise_screenplay, set_brief, set_budget, set_style, show_log, slate_compile, slate_lora,
     slate_set, slate_target, snapshot_list, snapshot_show, stage_camera, stage_export, stage_place,
     stems_soundtrack, stems_vo, stills_describe, stills_generate, undo_show, unlock_show,
-    unlock_writer, upsert_cast, wall_add, Doctor, Status,
+    unlock_writer, upgrade_check, upsert_cast, version_info, wall_add, Doctor, Status,
 };
 use std::path::{Path, PathBuf};
 use std::process::ExitCode;
@@ -187,6 +187,13 @@ enum Cmd {
     },
     /// Machine-readable spec. lot help --json is the contract.
     Help,
+    /// Kernel name + version. No show required.
+    Version,
+    /// Check LOT_UPGRADE_URL. --check only; never downloads.
+    Upgrade {
+        #[arg(long, default_value_t = false)]
+        check: bool,
+    },
     /// Runtime probes (ffmpeg / Comfy / brains). No GUI.
     Doctor,
     /// Native agent door (stdio MCP).
@@ -1089,6 +1096,34 @@ fn main() -> ExitCode {
                 print!("{}", help_plain());
             }
             ExitCode::SUCCESS
+        }
+        Cmd::Version => {
+            let v = version_info();
+            if cli.json {
+                println!("{}", serde_json::to_string(&v).expect("version json"));
+            } else {
+                println!("{} {}", v.name, v.version);
+            }
+            ExitCode::SUCCESS
+        }
+        Cmd::Upgrade { check } => {
+            if !check {
+                return fail(cli.json, lot_core::UPGRADE_NO_UPGRADE);
+            }
+            match upgrade_check() {
+                Ok(r) => {
+                    if cli.json {
+                        println!("{}", serde_json::to_string(&r).expect("upgrade json"));
+                    } else {
+                        println!(
+                            "{} {} latest {} update={}",
+                            r.name, r.version, r.latest, r.update
+                        );
+                    }
+                    ExitCode::SUCCESS
+                }
+                Err(e) => fail(cli.json, &e.to_string()),
+            }
         }
         Cmd::Doctor => {
             let d = Doctor::probe();

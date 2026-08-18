@@ -13,8 +13,12 @@ lot status --json
 lot create <dir> --name "Title" --json
 lot open <dir> --json
 lot doctor --json
+lot version --json
+lot upgrade --check --json
 lot mcp
 ```
+
+`lot version --json` / `lot_version` is name + crate version (no show). `lot upgrade --check` / `lot_upgrade` `{check:true}` compares to `LOT_UPGRADE_URL` (JSON `version`/`latest` or a one-line version). Never downloads. Unset channel → `no upgrade channel —`. Missing `--check` → `no upgrade — use --check`.
 
 Optional `--show <path>` (CLI global) or MCP `path` opens that show, then runs. Omit to keep the current pointer.
 
@@ -28,7 +32,7 @@ Show budget: `lot budget --spend N --render N` (or `--clear-spend` / `--clear-re
 
 `lot mcp` is NDJSON JSON-RPC 2.0 on stdin/stdout. Tools:
 
-- `lot_status`, `lot_create`, `lot_open`, `lot_doctor`, `lot_help`, `lot_snapshot`, `lot_restore`, `lot_undo`, `lot_lock`, `lot_unlock`, `lot_budget`, `lot_log`, `lot_handoff`
+- `lot_status`, `lot_create`, `lot_open`, `lot_doctor`, `lot_help`, `lot_version`, `lot_upgrade`, `lot_snapshot`, `lot_restore`, `lot_undo`, `lot_lock`, `lot_unlock`, `lot_budget`, `lot_log`, `lot_handoff`
 - `lot_show`, `lot_scene`, `lot_shot`, `lot_take`, `lot_import`
 - `lot_writer_brief`, `lot_writer_style`, `lot_writer_cast`, `lot_writer_draft`, `lot_writer_revise`, `lot_writer_lock`, `lot_writer_unlock`
 - `lot_breakdown_import`, `lot_breakdown_parse`

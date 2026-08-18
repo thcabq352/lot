@@ -49,6 +49,7 @@ A show is a directory with `show.json` + `events.jsonl` + `media/`.
 
 1. `lot_status` (or `lot status --json`)
 2. `lot_doctor` (or `lot doctor --json`)
+3. `lot_version` if you need the kernel version. `lot_upgrade` with `check: true` if `LOT_UPGRADE_URL` is set — never downloads. Unset → `no upgrade channel —`.
 
 Read `school`, `renderer`, `phase`, `dirty`, `missing`, `missing_media`, `cap`, `locked_by`, `agent`, `budget`, `last_event`, `doctor`. `missing` is the current-phase handoff gate. `dirty` is sections that already have work. `missing_media` is referenced paths that are not files. If `school.enabled` is false, skip all pedagogy. If `locked_by` is someone else, stop — do not clobber.
 
@@ -67,7 +68,7 @@ If `doctor.stills_comfy_workflow` is false, Comfy stills will fail honestly — 
 9. **Stems** — soundtrack cue + attach or `LOT_SOUNDTRACK_CMD`; VO generate (SAPI / piper / espeak / say) or attach. Never a fake track.
 10. **Finish / Cut** — optional `finish --upscale --fps`; FCPXML + EDL interchange (`lot cut export` = `lot dailies export`). Same circled takes is a no-op. Missing engine → `no finish —` and no stub.
 
-`lot snapshot` / `lot restore --rev` before a risky revise. `lot undo` reverts the last write from the event log (no snapshot needed). `lot handoff` (dry-run) before leaving a phase; `lot handoff --commit` only when ready. `lot lock` / `lot unlock` when sharing a show. `lot budget --spend` / `--render` before a spendy generate. `lot help --json` is the contract.
+`lot snapshot` / `lot restore --rev` before a risky revise. `lot undo` reverts the last write from the event log (no snapshot needed). `lot handoff` (dry-run) before leaving a phase; `lot handoff --commit` only when ready. `lot lock` / `lot unlock` when sharing a show. `lot budget --spend` / `--render` before a spendy generate. `lot version` / `lot upgrade --check` for the kernel (no installer download). `lot help --json` is the contract.
 
 ## Stills lock vs hunt
 

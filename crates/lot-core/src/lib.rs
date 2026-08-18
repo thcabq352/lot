@@ -33,6 +33,7 @@ mod stage;
 mod stems;
 mod stills;
 mod undo;
+mod version;
 
 pub use agent::{clear_agent, current as current_agent, set_agent, with_agent};
 pub use audit::{export_log, last_event, mutation_json, show_log, EventMeta};
@@ -80,6 +81,10 @@ pub use stills::{
     board_export, comfy_workflow_ready, resolve_comfy_workflow, stills_describe, stills_generate,
 };
 pub use undo::undo_show;
+pub use version::{
+    upgrade_check, version_info, UpgradeReport, VersionInfo, NO_CHANNEL as UPGRADE_NO_CHANNEL,
+    NO_UPGRADE as UPGRADE_NO_UPGRADE,
+};
 
 /// Kernel status — CLI `--json` and MCP `lot_status` share this shape.
 #[derive(Debug, Serialize)]
