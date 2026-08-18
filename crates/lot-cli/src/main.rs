@@ -97,7 +97,7 @@ enum Cmd {
         #[command(subcommand)]
         cmd: PictureCmd,
     },
-    /// Stage: 2D floor marks + camera card. 3D stays in Blockout.
+    /// Stage: 2D floor marks + camera card. 3D is an optional Blockout studio.
     Stage {
         #[command(subcommand)]
         cmd: StageCmd,
@@ -117,7 +117,7 @@ enum Cmd {
         #[command(subcommand)]
         cmd: SlateCmd,
     },
-    /// Motion Previs: plates → marks. Pose/depth stay in Motion Previs Studio.
+    /// Motion: plates → marks. Pose/depth stay in an optional Motion Previs studio.
     Motion {
         #[command(subcommand)]
         cmd: MotionCmd,
@@ -141,7 +141,7 @@ enum Cmd {
         #[command(subcommand)]
         cmd: StemsCmd,
     },
-    /// Cut: interchange export (FCPXML). Resolve live is an adapter later.
+    /// Cut: FCPXML + EDL interchange. Resolve is optional, never bundled.
     Cut {
         #[command(subcommand)]
         cmd: CutCmd,
@@ -1352,7 +1352,7 @@ fn main() -> ExitCode {
                 println!("{}", serde_json::to_string(&d).expect("doctor json"));
             } else {
                 println!(
-                    "ffmpeg={} ffprobe={} comfy={} grok={} local={} ollama={} ollama_llm={} ollama_vision={} vo_tts={} soundtrack_cmd={} prompt_server={} motion_previs={} renderer={}",
+                    "ffmpeg={} ffprobe={} comfy={} grok={} local={} ollama={} ollama_llm={} ollama_vision={} vo_tts={} soundtrack_cmd={} prompt_server={} motion_previs={} blockout={} resolve={} renderer={}",
                     d.ffmpeg,
                     d.ffprobe,
                     d.comfy,
@@ -1365,8 +1365,13 @@ fn main() -> ExitCode {
                     d.soundtrack_cmd,
                     d.prompt_server,
                     d.motion_previs,
+                    d.blockout,
+                    d.resolve,
                     d.renderer
                 );
+                for n in &d.notes {
+                    println!("{n}");
+                }
             }
             ExitCode::SUCCESS
         }

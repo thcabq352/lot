@@ -13,3 +13,5 @@ Thumbs.db
 !/.env.example
 # Tauri codegen — not the show
 crates/lot-ui/gen/
+# Windows pack + optional GPL ffmpeg fetch (never commit binaries)
+/dist/

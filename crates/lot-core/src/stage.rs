@@ -1,4 +1,4 @@
-//! Stage: 2D floor marks + camera card. 3D blocking stays in Blockout.
+//! Stage: 2D floor marks + camera card. 3D blocking is an optional Blockout studio.
 
 use crate::model::{shot_nums_match, StageMark};
 use crate::show::{append_event, append_event_with, bump, write_show, Show, ShowError};
@@ -160,7 +160,7 @@ pub fn stage_export() -> Result<(PathBuf, Show, PathBuf), ShowError> {
         "show": show.name,
         "rev": show.rev,
         "engine": "lot-marks",
-        "notice": "2D floor marks only. 3D grey-box blocking stays in Blockout (Sam Wasserman). Lot does not invent a glTF or depth pass.",
+        "notice": "2D floor marks only. 3D grey-box is an optional Blockout studio — not required. Lot does not invent a glTF or depth pass.",
         "blockout": studio.as_ref().map(|p| json!({
             "ready": true,
             "control": p.display().to_string(),

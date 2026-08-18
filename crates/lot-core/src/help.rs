@@ -9,12 +9,17 @@ pub fn help_spec() -> Value {
         "door": ["cli", "mcp", "http", "ui"],
         "school_default": "off",
         "telemetry_default": "off",
-        "notice": "Flags only. No TTY prompts. Exit 0 = ok. Do not click folder dialogs. --agent / LOT_AGENT / MCP agent: who writes (unset = human, no auto-claim). --cap / LOT_CAP / MCP cap: read|write|render|export|spend (unset = all). --detail full / MCP detail=full dumps shot prompts and cards; default --json is lean (ids, counts, media path+sha256+duration). Jail = this show.lot + LOT_MEDIA_ROOTS; fountain is scene text (AC-013). Show budget: lot budget --spend/--render (hit cap → stop). MCP notifications/cancelled stops stills generate, finish, and draft (cancelled —; no fake PNG/wav/fountain). lot status --json includes dirty, missing, missing_media.",
+        "package": {
+            "windows": ["lot.exe", "lot-ui.exe"],
+            "optional_sidecar": ["ffmpeg", "ffprobe"],
+            "never": ["ollama", "comfy", "resolve", "blockout", "wasserman"]
+        },
+        "notice": "Flags only. No TTY prompts. Exit 0 = ok. Do not click folder dialogs. --agent / LOT_AGENT / MCP agent: who writes (unset = human, no auto-claim). --cap / LOT_CAP / MCP cap: read|write|render|export|spend (unset = all). --detail full / MCP detail=full dumps shot prompts and cards; default --json is lean (ids, counts, media path+sha256+duration). Jail = this show.lot + LOT_MEDIA_ROOTS; fountain is scene text (AC-013). Show budget: lot budget --spend/--render (hit cap → stop). MCP notifications/cancelled stops stills generate, finish, and draft (cancelled —; no fake PNG/wav/fountain). lot status --json includes dirty, missing, missing_media. Windows pack is lot + lot-ui (scripts/pack-windows.ps1). Ollama, Comfy, Resolve, Blockout stay optional — never bundled. Do not install Wasserman apps.",
         "verbs": [
             verb("lot status", "lot_status", "kernel", "First call. Phase, dirty sections, missing (handoff blockers), missing_media, renderer, school."),
             verb("lot create <dir> --name", "lot_create", "kernel", "Create a show.lot and make it current."),
             verb("lot open <dir>", "lot_open", "kernel", "Open a show.lot and make it current."),
-            verb("lot doctor", "lot_doctor", "kernel", "Probe ffmpeg, Comfy, brains, Studio, Blockout."),
+            verb("lot doctor", "lot_doctor", "kernel", "Probe ffmpeg, optional Comfy/Ollama/Grok, optional Blockout/Motion Previs/Resolve. Notes: no ffmpeg — / no blockout — / no resolve —. None required for lot status."),
             verb("lot --cap read|write|render|export|spend", "", "kernel", "AC-012. Unset = all. read cannot circle or stills generate. write cannot Comfy/Grok spend without render/spend."),
             verb("lot --agent <id>", "", "kernel", "Who writes. Unset = human (no auto-claim). Second agent gets locked_by."),
             verb("lot --detail full", "", "kernel", "Dump full shot/prompt cards on --json. Default is lean. MCP: detail=full."),
@@ -53,7 +58,7 @@ pub fn help_spec() -> Value {
             verb("lot picture unlock --shot", "lot_picture_unlock", "picture", "Unlock a shot card. Does not rename the shot."),
             verb("lot picture ref --shot --file", "lot_picture_ref", "picture", "Attach a jailed ref. Copies into picture/. Does not delete the source. No fake PNG."),
             verb("lot picture status", "lot_picture_status", "picture", "List shot cards: lock, ref, name."),
-            verb("lot stage place --shot --who --mark", "lot_stage_place", "stage", "2D floor mark. 3D stays in Blockout."),
+            verb("lot stage place --shot --who --mark", "lot_stage_place", "stage", "2D floor mark. 3D is an optional Blockout studio, not required."),
             verb("lot stage camera --shot --size --lens --move", "lot_stage_camera", "stage", "Camera card on the shot."),
             verb("lot stage export", "lot_stage_export", "stage", "Write stage/block.json. No fake glTF."),
             verb("lot motion plate --file --shot --mode", "lot_motion_plate", "motion", "Attach a plate. Does not rename the shot."),
@@ -73,7 +78,7 @@ pub fn help_spec() -> Value {
             verb("lot stems soundtrack --brief", "lot_stems_soundtrack", "stems", "Cue sheet. --generate needs LOT_SOUNDTRACK_CMD. Never a silent stub."),
             verb("lot stems vo --text --generate", "lot_stems_vo", "stems", "SAPI / piper / espeak / say, or --file."),
             verb("lot finish --upscale --fps", "lot_finish", "cut", "Optional pickup. ffmpeg or LOT_UPSCALE_CMD. No stub. MCP cancel kills the child and writes no file."),
-            verb("lot cut export", "lot_cut_export", "cut", "Same FCPXML + EDL interchange. Same circled takes is a no-op."),
+            verb("lot cut export", "lot_cut_export", "cut", "Same FCPXML + EDL interchange. Same circled takes is a no-op. Resolve is optional, never bundled."),
             verb("lot plugin list", "lot_plugin_list", "kernel", "Declared adapters on LOT_PLUGIN_PATH and show/plugins. sha256 required."),
             verb("lot plugin call --id --verb", "lot_plugin_call", "kernel", "Run a stdio sidecar. WASM → no wasm runtime —. Hash mismatch / undeclared refuse. Does not invent media."),
             verb("lot school get", "lot_school_get", "school", "Read school switch. Default off."),
@@ -82,7 +87,7 @@ pub fn help_spec() -> Value {
             verb("lot school exam [--fixture]", "lot_school_exam", "school", "Grade craft+theory. Never blocks export. CLI exit 1 if the exam fails."),
             verb("lot mcp", "", "kernel", "NDJSON JSON-RPC 2.0 on stdin/stdout. Native agent door."),
             verb("lot serve [--bind]", "", "kernel", "Optional HTTP/OpenAPI twin. Same tool names as MCP. Default 127.0.0.1:8787. Not required — lot mcp is the agent door."),
-            verb("lot-ui", "", "kernel", "Human film-bay window. Same lot-core as the CLI. Agents still use lot mcp. No folder dialog.")
+            verb("lot-ui", "", "kernel", "Human film-bay window (packaged lot-ui.exe, or cargo run when developing). Same lot-core as the CLI. Agents still use lot mcp. No folder dialog.")
         ]
     })
 }
@@ -186,6 +191,34 @@ mod tests {
         assert!(
             v["notice"].as_str().unwrap().contains("missing_media"),
             "help notice must name status missing_media"
+        );
+        let never: Vec<&str> = v["package"]["never"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .filter_map(|x| x.as_str())
+            .collect();
+        for n in ["ollama", "comfy", "resolve", "blockout", "wasserman"] {
+            assert!(never.contains(&n), "package.never must list {n}");
+        }
+        let doctor = v["verbs"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .find(|x| x["mcp"] == "lot_doctor")
+            .unwrap();
+        let job = doctor["job"].as_str().unwrap();
+        assert!(
+            job.contains("optional"),
+            "doctor job must say optional {job}"
+        );
+        assert!(
+            job.contains("no resolve —"),
+            "doctor job must name no resolve — {job}"
+        );
+        assert!(
+            !job.to_lowercase().contains("install"),
+            "doctor must not tell anyone to install {job}"
         );
     }
 }

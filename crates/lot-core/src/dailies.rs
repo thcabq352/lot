@@ -6,7 +6,6 @@ use sha2::{Digest, Sha256};
 use std::fs;
 use std::io::Read;
 use std::path::{Path, PathBuf};
-use std::process::Command;
 
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
 pub struct IngestReport {
@@ -463,7 +462,7 @@ fn xml_esc(s: &str) -> String {
 }
 
 fn probe_duration(file: &Path) -> Option<f64> {
-    let out = Command::new("ffprobe")
+    let out = crate::doctor::bin_command("ffprobe")?
         .args([
             "-v",
             "error",

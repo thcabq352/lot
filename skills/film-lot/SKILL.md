@@ -25,11 +25,12 @@ Home: `C:\Users\thcab\lot` — **not** `video-buddy-suite`.
 |---|---|
 | Filmmaker loop (this show) | This profile + `lot mcp` |
 | Lot **code** (Rust, tests, kernel) | `hermes -p coder` in the Lot repo |
-| 3D grey-box / pose-depth | Blockout / Motion Previs Studio — adapters only |
+| 3D grey-box / pose-depth | Optional Blockout / Motion Previs studios — never required |
+| Timeline NLE | Optional Resolve — Lot already writes FCPXML + EDL |
 
-Do not start Tauri or installers from this skill. Do not port Wasserman Electron.
+Do not start Tauri from this skill. Do not port Wasserman Electron. Do not tell the human to install ScriptBreak, Cork Board, Master Canvas, Blockout, Motion Previs Studio, Slate, Circle Take, Ollama, Comfy, or Resolve.
 
-Humans may open `lot-ui` (`cargo run -p lot-ui`) to confirm Writer and view later sections (breakdown → cut) in that window. Thin confirm: breakdown parse, wall add/update/remove, picture lock/unlock/ref, handoff. Filmmaker agents still use `lot mcp`.
+Humans open `lot-ui.exe` from the Windows pack (`scripts/pack-windows.ps1`), or `cargo run -p lot-ui` when developing. Thin confirm: breakdown parse, wall add/update/remove, picture lock/unlock/ref, handoff. Filmmaker agents still use `lot mcp`.
 
 ## Door
 
@@ -65,13 +66,13 @@ If `doctor.stills_comfy_workflow` is false, Comfy stills will fail honestly — 
 1. **Writer** — brief, style, cast, draft, revise, lock. Formats: feature | 30min | 15s | episodic | advertisement | music-video (`ad`, `mv`). Empty brief → `no brief`. No brain → `no brain —` and never a fake fountain.
 2. **Breakdown** — import/parse (ScriptBreak-equivalent, including `NAME (quietly)` → character). Import does not delete the source.
 3. **Wall / Picture** — beat cards (`wall add` / `update` / `remove` / `reorder`), lock/unlock shot cards, jailed `--file` ref. Empty beat → `no beat —`. Does not rename the shot. No fake PNG.
-4. **Stage** — 2D floor marks + camera card. `stage export` → `stage/block.json`. 3D stays in Blockout. Never invent glTF.
+4. **Stage** — 2D floor marks + camera card. `stage export` → `stage/block.json`. 3D is an optional Blockout studio (`no blockout —` if missing). Never invent glTF.
 5. **Stills / Board** — `stills generate --backend grok|comfy` (no silent swap), `stills describe` (Grok vision or Ollama VL; no invented look), then `board export`. Generates record seed, prompt hash, duration, VRAM cap so a take can be reshot. MCP `notifications/cancelled` stops stills generate / finish / draft (`cancelled —`; no fake PNG, wav, or fountain).
-6. **Motion** — plate + marks (`camera_only` | `actor_motion` | `object_motion` | `full_scene`). Export `motion/previs.json`. Pose/depth stay in Motion Previs Studio. Never invent OpenPose.
+6. **Motion** — plate + marks (`camera_only` | `actor_motion` | `object_motion` | `full_scene`). Export `motion/previs.json`. Pose/depth stay in an optional Motion Previs studio. Never invent OpenPose.
 7. **Slate** — canon on the shot; `slate compile --target` for LTX, API providers, or `LOT_PROMPT_SERVER`. LoRAs are metadata. No invented rewrite if the brain/server is down.
 8. **Dailies** — ingest `01-foo.mp4` → shot 01 (do not rename the shot), circle, FCPXML 1.9 + CMX 3600 EDL. Circle without `--take` fails (no GUI). Same circled takes twice is a no-op.
 9. **Stems** — soundtrack cue + attach or `LOT_SOUNDTRACK_CMD`; VO generate (SAPI / piper / espeak / say) or attach. Never a fake track.
-10. **Finish / Cut** — optional `finish --upscale --fps`; FCPXML + EDL interchange (`lot cut export` = `lot dailies export`). Same circled takes is a no-op. Missing engine → `no finish —` and no stub.
+10. **Finish / Cut** — optional `finish --upscale --fps`; FCPXML + EDL interchange (`lot cut export` = `lot dailies export`). Same circled takes is a no-op. Missing engine → `no finish —` and no stub. Resolve is optional interchange — never bundled.
 
 `lot snapshot` / `lot restore --rev` before a risky revise. `lot undo` reverts the last write from the event log (no snapshot needed). `lot handoff` (dry-run) before leaving a phase; `lot handoff --commit` only when ready. `lot lock` / `lot unlock` when sharing a show. `lot budget --spend` / `--render` before a spendy generate. `lot version` / `lot upgrade --check` for the kernel (no installer download). `lot help --json` is the contract.
 
@@ -108,4 +109,4 @@ Pass `cap` / `--cap` / `LOT_CAP`. Unset = all. `read` cannot circle or generate 
 
 ## William bar
 
-When a human UI exists it must pass the William bar in `docs/plan-agent-first-film-lot.md`. Humans may open `lot-ui`. Filmmaker agents still use `lot mcp`. Do not start Tauri from this skill.
+When a human UI exists it must pass the William bar in `docs/plan-agent-first-film-lot.md`. Humans open packaged `lot-ui`. Filmmaker agents still use `lot mcp`. Do not start Tauri from this skill. The Windows pack is `scripts/pack-windows.ps1` — lot + lot-ui only. Ollama, Comfy, Resolve, Blockout stay optional on the user's machine.

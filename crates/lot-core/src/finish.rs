@@ -89,11 +89,11 @@ pub fn finish_pickup(
         }
     }
 
-    if !crate::doctor::bin_on_path("ffmpeg") {
+    let Some(mut ffmpeg) = crate::doctor::bin_command("ffmpeg") else {
         return Err(ShowError::Msg(
             "no finish — ffmpeg not on PATH (or set LOT_UPSCALE_CMD). Did not write a stub.".into(),
         ));
-    }
+    };
 
     let mut vf = Vec::new();
     if upscale {
@@ -103,7 +103,7 @@ pub fn finish_pickup(
         vf.push(format!("fps={rate}"));
     }
     let status = run_cancellable(
-        Command::new("ffmpeg")
+        ffmpeg
             .args(["-y", "-i"])
             .arg(&src)
             .arg("-vf")
@@ -158,14 +158,14 @@ fn run_cancellable(
 }
 
 fn fps_pass(file: &Path, rate: &str) -> Result<(), ShowError> {
-    if !crate::doctor::bin_on_path("ffmpeg") {
+    let Some(mut ffmpeg) = crate::doctor::bin_command("ffmpeg") else {
         return Err(ShowError::Msg(
             "no finish — ffmpeg not on PATH for --fps after LOT_UPSCALE_CMD".into(),
         ));
-    }
+    };
     let tmp = file.with_extension("fps-tmp.mp4");
     let status = run_cancellable(
-        Command::new("ffmpeg")
+        ffmpeg
             .args(["-y", "-i"])
             .arg(file)
             .args(["-vf", &format!("fps={rate}"), "-an"])

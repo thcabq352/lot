@@ -57,7 +57,7 @@ Hermes:
 
 Skill: `skills/film-lot/SKILL.md`.
 
-Humans may open the film-bay window: `cargo run -p lot-ui`. Same window confirms Writer and shows section viewers (breakdown → cut) for what the agent already wrote. Thin confirm: breakdown parse, wall add/update/remove, picture lock/unlock/ref, handoff. Agents still use `lot mcp`. No folder dialog. Do not start Phase 6 installers.
+Humans open the film-bay window: `lot-ui.exe` from the Windows pack (`scripts/pack-windows.ps1`), or `cargo run -p lot-ui` when developing. Same window confirms Writer and shows section viewers (breakdown → cut) for what the agent already wrote. Thin confirm: breakdown parse, wall add/update/remove, picture lock/unlock/ref, handoff. Agents still use `lot mcp`. No folder dialog. Filmmakers do not need cargo or any Wasserman app.
 
 No TTY prompts. Flags only. Exit 0 = ok. A show is a directory with `show.json` + `events.jsonl` + `media/`.
 
@@ -116,7 +116,7 @@ lot stage camera --shot 01 --size WIDE --angle eye --lens 35 --move "dolly in" -
 lot stage export --json
 ```
 
-Writes `stage/block.json`. Does **not** invent glTF / depth. 3D grey-box stays in Blockout (doctor `blockout`). Does not rename the shot.
+Writes `stage/block.json`. Does **not** invent glTF / depth. 3D grey-box is an optional Blockout studio (doctor `blockout` → `no blockout —` if missing). The show still works. Does not rename the shot.
 
 ## Snapshot / restore
 
@@ -215,7 +215,7 @@ lot motion export --json
 lot motion analyze --shot 01 --json
 ```
 
-Modes: `camera_only` | `actor_motion` | `object_motion` | `full_scene`. Writes `motion/previs.json` + `motion/prompt.md`. Does **not** invent OpenPose / depth. Pose/depth stay in Motion Previs Studio (doctor `motion_previs`) or `LOT_MOTION_CMD`. Plate bind does not rename the shot.
+Modes: `camera_only` | `actor_motion` | `object_motion` | `full_scene`. Writes `motion/previs.json` + `motion/prompt.md`. Does **not** invent OpenPose / depth. Pose/depth stay in an optional Motion Previs studio (doctor `motion_previs` → `no motion previs —`) or `LOT_MOTION_CMD`. Not required. Plate bind does not rename the shot.
 
 ## Finish (optional upscale + FPS)
 
@@ -286,11 +286,26 @@ Tutor rides on mutating `--json` / MCP payloads (no extra brain call). Off or `-
 5. Secrets never in `show.lot` or this repo.
 6. Do not port Wasserman Electron apps here unless replacing an adapter.
 7. No LangGraph. Hermes is the filmmaker loop; Cursor builds Lot.
-8. **William bar** (canon): `docs/plan-agent-first-film-lot.md`. The human window is `lot-ui`. One show, calm, cinematic, School as a dimmer. No gray form farm. No segregated “special” skin. Agents use `lot mcp`. Do not start Phase 6 installers.
+8. **William bar** (canon): `docs/plan-agent-first-film-lot.md`. The human window is `lot-ui`. One show, calm, cinematic, School as a dimmer. No gray form farm. No segregated “special” skin. Agents use `lot mcp`. Windows pack: `scripts/pack-windows.ps1` (lot + lot-ui; optional GPL ffmpeg sidecar).
+
+## Windows pack
+
+```
+.\scripts\pack-windows.ps1
+.\scripts\pack-windows.ps1 -Ffmpeg
+.\scripts\pack-windows.ps1 -Installer
+```
+
+Unzip `dist/lot-0.1.0-windows-x64.zip`, or `lot-*-setup.exe` when `makensis` is on PATH. Run `lot-ui.exe` or `lot.exe status --json`. `install-shortcuts.ps1` adds a Start menu film-bay shortcut; `-AddPath` is optional. Filmmakers do **not** install ScriptBreak, Cork Board, Master Canvas, Blockout, Motion Previs Studio, Slate, Circle Take, or cargo.
+
+**In the zip:** `lot.exe` (CLI + `lot mcp`), `lot-ui.exe`. ffmpeg/ffprobe only if you passed `-Ffmpeg` (GPL sidecar under `sidecar/ffmpeg/`, never committed).
+
+**Never in the zip:** Ollama, ComfyUI, DaVinci Resolve (no `.drp` / AAF), Blockout, Wasserman apps. Doctor may probe them (`no ollama —` / `no comfy —` / `no resolve —` / `no blockout —`) and the show still works. Grok stays opt-in when online.
 
 ## Do not
 
 - Commit a real show
 - Put API keys in chat or files
-- Require Comfy/Resolve/GPU for `lot status`
-- Start Phase 6 installers
+- Require Comfy, Ollama, Resolve, Blockout, GPU, or Wasserman apps for `lot status`
+- Vendor Wasserman binaries or a Resolve installer
+- Commit ffmpeg into git (`dist/` is gitignored)

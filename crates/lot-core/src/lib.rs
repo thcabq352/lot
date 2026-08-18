@@ -288,3 +288,30 @@ impl Status {
         }
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn status_ok_without_optional_studios() {
+        let _g = TEST_ENV.lock().unwrap_or_else(|e| e.into_inner());
+        std::env::remove_var("LOT_SHOW");
+        let st = Status::bootstrap();
+        if st.show.is_none() {
+            assert!(
+                st.ok,
+                "no show still succeeds without optional studios {st:?}"
+            );
+        }
+        if !st.doctor.blockout {
+            assert!(st.doctor.notes.iter().any(|n| n == "no blockout —"));
+        }
+        if !st.doctor.resolve {
+            assert!(st.doctor.notes.iter().any(|n| n == "no resolve —"));
+        }
+        if !st.doctor.comfy {
+            assert_eq!(st.renderer, "unavailable");
+        }
+    }
+}

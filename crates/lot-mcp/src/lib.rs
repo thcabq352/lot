@@ -343,7 +343,7 @@ fn tools() -> Value {
         },
         {
             "name": "lot_stage_place",
-            "description": "Place a 2D floor mark on a shot. 3D blocking stays in Blockout. Does not rename the shot.",
+            "description": "Place a 2D floor mark on a shot. 3D blocking is an optional Blockout studio, not required. Does not rename the shot.",
             "inputSchema": {
                 "type": "object",
                 "properties": {
@@ -618,7 +618,7 @@ fn tools() -> Value {
         },
         {
             "name": "lot_cut_export",
-            "description": "Cut interchange: FCPXML 1.9 + CMX 3600 EDL. Same circled takes is a no-op. Resolve live is an adapter later.",
+            "description": "Cut interchange: FCPXML 1.9 + CMX 3600 EDL. Same circled takes is a no-op. Resolve is optional interchange, never bundled.",
             "inputSchema": {
                 "type": "object",
                 "properties": { "path": path_prop() }
@@ -917,7 +917,7 @@ fn tools() -> Value {
         },
         {
             "name": "lot_doctor",
-            "description": "Probe ffmpeg, Comfy, Grok, Ollama (LLM + vision), VO TTS, soundtrack, prompt server, Motion Previs, Blockout, upscale.",
+            "description": "Probe ffmpeg, optional Comfy/Ollama/Grok, optional Blockout/Motion Previs/Resolve. Notes: no ffmpeg — / no blockout — / no resolve —. None required for lot status.",
             "inputSchema": { "type": "object", "properties": {} }
         }
     ]);

@@ -1,0 +1,42 @@
+name: ci
+
+on:
+  push:
+  pull_request:
+
+jobs:
+  windows:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          components: rustfmt
+      - name: fmt
+        run: cargo fmt --all -- --check
+      - name: test
+        run: cargo test --workspace
+      - name: release
+        run: cargo build --release -p lot-cli -p lot-ui
+      - name: pack
+        run: pwsh -File scripts/pack-windows.ps1 -SkipBuild
+      - name: pack has lot and lot-ui only
+        shell: pwsh
+        run: |
+          $stage = 'dist/lot-windows'
+          if (-not (Test-Path "$stage/lot.exe")) { throw 'missing lot.exe' }
+          if (-not (Test-Path "$stage/lot-ui.exe")) { throw 'missing lot-ui.exe' }
+          $banned = @(
+            'ollama.exe', 'ComfyUI.exe', 'Resolve.exe', 'ScriptBreak.exe',
+            'Cork Board.exe', 'Master Canvas.exe', 'Blockout.exe',
+            'Motion Previs Studio.exe', 'Slate.exe', 'Circle Take.exe',
+            '*.drp', '*.aaf'
+          )
+          foreach ($pat in $banned) {
+            $hit = Get-ChildItem -Path $stage -Recurse -Filter $pat -ErrorAction SilentlyContinue
+            if ($hit) { throw "pack must not include $pat" }
+          }
+          if (Test-Path "$stage/sidecar/ffmpeg/ffmpeg.exe") {
+            throw 'default pack must not bundle ffmpeg; use -Ffmpeg at pack time'
+          }
+          if (-not (Test-Path "$stage/lot.nsi")) { throw 'missing lot.nsi' }

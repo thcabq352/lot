@@ -12,7 +12,6 @@ use serde_json::{json, Value};
 use std::fs;
 use std::io::Read;
 use std::path::{Path, PathBuf};
-use std::process::Command;
 use std::thread;
 use std::time::{Duration, Instant};
 
@@ -717,12 +716,12 @@ fn read_image_or_frame(p: &Path) -> Result<(Vec<u8>, &'static str, String), Show
 }
 
 fn extract_frame(p: &Path) -> Result<(Vec<u8>, &'static str, String), ShowError> {
-    if !crate::doctor::bin_on_path("ffmpeg") {
+    let Some(mut ffmpeg) = crate::doctor::bin_command("ffmpeg") else {
         return Err(ShowError::Msg(
             "no vision frame — ffmpeg needed to look at a plate. Did not invent a description."
                 .into(),
         ));
-    }
+    };
     let dest = std::env::temp_dir().join(format!(
         "lot-look-{}-{}.jpg",
         std::process::id(),
@@ -731,7 +730,7 @@ fn extract_frame(p: &Path) -> Result<(Vec<u8>, &'static str, String), ShowError>
             .map(|d| d.as_nanos())
             .unwrap_or(0)
     ));
-    let status = Command::new("ffmpeg")
+    let status = ffmpeg
         .args(["-y", "-i"])
         .arg(p)
         .args(["-ss", "0.3", "-frames:v", "1"])

@@ -1,5 +1,5 @@
 //! Motion Previs kernel: plates → marks → export.
-//! Pose / depth / OpenPose stay in Motion Previs Studio. Never a fake bundle.
+//! Pose / depth / OpenPose stay in an optional Motion Previs studio. Never a fake bundle.
 
 use crate::model::{shot_nums_match, MediaItem};
 use crate::show::{append_event, append_event_with, bump, write_show, Show, ShowError};
@@ -148,7 +148,7 @@ pub fn motion_export() -> Result<(PathBuf, Show, PathBuf), ShowError> {
         "show": show.name,
         "rev": show.rev,
         "engine": "lot-marks",
-        "notice": "Plates and marks only. Pose / depth / OpenPose stay in Motion Previs Studio (Sam Wasserman). Lot does not invent a control bundle.",
+        "notice": "Plates and marks only. Pose / depth / OpenPose stay in an optional Motion Previs studio — not required. Lot does not invent a control bundle.",
         "studio": studio.as_ref().map(|p| json!({
             "ready": true,
             "control": p.display().to_string(),
@@ -298,49 +298,32 @@ pub fn motion_previs_control() -> Option<PathBuf> {
 }
 
 fn probe_plate(file: &Path) -> (Option<String>, Option<String>) {
-    let dur = Command::new("ffprobe")
-        .args([
-            "-v",
-            "error",
-            "-show_entries",
-            "format=duration",
-            "-of",
-            "default=noprint_wrappers=1:nokey=1",
-        ])
-        .arg(file)
-        .output()
-        .ok()
-        .filter(|o| o.status.success())
-        .and_then(|o| {
-            let s = String::from_utf8_lossy(&o.stdout).trim().to_string();
-            if s.is_empty() {
-                None
-            } else {
-                Some(s)
-            }
-        });
-    let fps = Command::new("ffprobe")
-        .args([
-            "-v",
-            "error",
+    let dur = ffprobe_field(file, &["-show_entries", "format=duration"]);
+    let fps = ffprobe_field(
+        file,
+        &[
             "-select_streams",
             "v:0",
             "-show_entries",
             "stream=r_frame_rate",
-            "-of",
-            "default=noprint_wrappers=1:nokey=1",
-        ])
-        .arg(file)
-        .output()
-        .ok()
-        .filter(|o| o.status.success())
-        .and_then(|o| {
-            let s = String::from_utf8_lossy(&o.stdout).trim().to_string();
-            if s.is_empty() {
-                None
-            } else {
-                Some(s)
-            }
-        });
+        ],
+    );
     (dur, fps)
+}
+
+fn ffprobe_field(file: &Path, extra: &[&str]) -> Option<String> {
+    let mut cmd = crate::doctor::bin_command("ffprobe")?;
+    let mut args = vec!["-v", "error"];
+    args.extend_from_slice(extra);
+    args.extend_from_slice(&["-of", "default=noprint_wrappers=1:nokey=1"]);
+    let out = cmd.args(args).arg(file).output().ok()?;
+    if !out.status.success() {
+        return None;
+    }
+    let s = String::from_utf8_lossy(&out.stdout).trim().to_string();
+    if s.is_empty() {
+        None
+    } else {
+        Some(s)
+    }
 }
